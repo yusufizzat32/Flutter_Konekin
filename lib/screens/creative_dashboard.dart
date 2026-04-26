@@ -1,11 +1,18 @@
 // lib/screens/creative_dashboard.dart
 // =============================================================================
-// Creative Worker Dashboard - Menggunakan AuthService (Reusable Auth Logic)
+// Creative Worker Dashboard - Full Integration with AuthService & API
 // =============================================================================
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_service.dart';
+import '../services/api_service.dart';
+import '../models/dashboard_model.dart';
+import '../models/project_model.dart';
+import 'explore_projects.dart';
+import 'my_projects.dart';
+import 'portfolio_page.dart';
+import 'edit_profile.dart';
 
 class CreativeDashboard extends StatefulWidget {
   const CreativeDashboard({super.key});
@@ -16,23 +23,46 @@ class CreativeDashboard extends StatefulWidget {
 
 class _CreativeDashboardState extends State<CreativeDashboard> {
   final AuthService _auth = AuthService();
+  final ApiService _api = ApiService();
+  
+  // User Data
   Map<String, dynamic> _userData = {};
   String _userName = '';
   String _userEmail = '';
   String _userPhone = '';
   String _userCity = '';
   String _userType = '';
+  String _userBio = '';
+  
+  // Dashboard Stats
+  CreativeDashboardData? _dashboardStats;
+  
+  // Recommended Projects
+  List<Project> _recommendedProjects = [];
+  
+  // Loading States
   bool _isLoading = true;
   bool _isLoggingOut = false;
 
   @override
   void initState() {
     super.initState();
-    _loadUserData();
+    _loadAllData();
+  }
+
+  Future<void> _loadAllData() async {
+    await Future.wait([
+      _loadUserData(),
+      _loadDashboardStats(),
+      _loadRecommendedProjects(),
+    ]);
+    
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _loadUserData() async {
-    // Ambil data user dari AuthService
     final userData = await _auth.getUserData();
     final name = await _auth.getUserName();
     final email = await _auth.getUserEmail();
@@ -45,8 +75,31 @@ class _CreativeDashboardState extends State<CreativeDashboard> {
       _userPhone = _userData['phone'] ?? '-';
       _userCity = _userData['city'] ?? '-';
       _userType = userType ?? 'creative_worker';
-      _isLoading = false;
+      _userBio = _userData['bio'] ?? '';
     });
+  }
+
+  Future<void> _loadDashboardStats() async {
+    final result = await _api.getCreativeDashboard();
+    
+    if (mounted && result['success'] && result['data'] != null) {
+      setState(() {
+        _dashboardStats = CreativeDashboardData.fromJson(result['data']);
+      });
+    }
+  }
+
+  Future<void> _loadRecommendedProjects() async {
+    final result = await _api.getProjects();
+    
+    if (mounted && result['success'] && result['data'] != null) {
+      final projectsData = result['data']['projects'] ?? result['data'];
+      if (projectsData is List) {
+        setState(() {
+          _recommendedProjects = projectsData.take(3).map((e) => Project.fromJson(e)).toList();
+        });
+      }
+    }
   }
 
   // ── Logout dengan Konfirmasi ───────────────────────────────────────────────
@@ -99,7 +152,7 @@ class _CreativeDashboardState extends State<CreativeDashboard> {
             ),
             ElevatedButton(
               onPressed: () {
-                Navigator.pop(context); // Tutup dialog
+                Navigator.pop(context);
                 _logout();
               },
               style: ElevatedButton.styleFrom(
@@ -135,279 +188,43 @@ class _CreativeDashboardState extends State<CreativeDashboard> {
         _isLoggingOut = false;
       });
 
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['message']),
+          backgroundColor: result['success'] ? Colors.green : Colors.red,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      
       if (result['success']) {
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result['message']),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-        
-        // Navigate to login page
         Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-      } else {
-        // Show error message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result['message']),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
       }
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: Text(
-          'Dashboard Creative Worker',
-          style: GoogleFonts.plusJakartaSans(
-            fontWeight: FontWeight.w700,
-            fontSize: 18,
-          ),
-        ),
-        backgroundColor: const Color(0xFF006D77),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          // Logout button dengan loading indicator
-          _isLoggingOut
-              ? const Padding(
-                  padding: EdgeInsets.all(12),
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  ),
-                )
-              : IconButton(
-                  icon: const Icon(Icons.logout),
-                  onPressed: _showLogoutConfirmation,
-                  tooltip: 'Logout',
-                ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header dengan warna hijau tosca untuk creative
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Color(0xFF006D77), Color(0xFF83C5BE)],
-                      ),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Selamat Bekerja,',
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            color: Colors.white70,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _userName,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white24,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            'Creative Worker Account',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+  void _navigateTo(String route, {Object? arguments}) {
+    Navigator.push(context, MaterialPageRoute(
+      builder: (context) {
+        switch (route) {
+          case '/explore-projects':
+            return const ExploreProjectsPage();
+          case '/my-projects':
+            return MyProjectsPage(userType: 'creative');
+          case '/portfolio':
+            return const PortfolioPage();
+          case '/edit-profile':
+            return EditProfilePage(userData: _userData);
+          default:
+            return const SizedBox.shrink();
+        }
+      },
+    )).then((_) => _refreshData());
+  }
 
-                  const SizedBox(height: 24),
-
-                  // Info Card
-                  Text(
-                    'Informasi Akun',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF1B1B1F),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  Card(
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        children: [
-                          _infoRow(Icons.email_outlined, 'Email', _userEmail),
-                          const Divider(),
-                          _infoRow(Icons.phone_outlined, 'Telepon', _userPhone),
-                          const Divider(),
-                          _infoRow(Icons.location_on_outlined, 'Kota', _userCity),
-                          const Divider(),
-                          _infoRow(Icons.brush_outlined, 'Tipe', _userType),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Statistik Sederhana
-                  Text(
-                    'Statistik',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF1B1B1F),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _statCard(
-                          title: 'Proyek Selesai',
-                          value: '0',
-                          icon: Icons.check_circle_outline,
-                          color: const Color(0xFF006D77),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _statCard(
-                          title: 'Proyek Aktif',
-                          value: '0',
-                          icon: Icons.hourglass_empty,
-                          color: const Color(0xFF83C5BE),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _statCard(
-                          title: 'Rating',
-                          value: '0.0',
-                          icon: Icons.star_outline,
-                          color: const Color(0xFFE29578),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _statCard(
-                          title: 'Total Clients',
-                          value: '0',
-                          icon: Icons.people_outline,
-                          color: const Color(0xFF006D77),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Menu Cepat
-                  Text(
-                    'Menu Cepat',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF1B1B1F),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 1.5,
-                    children: [
-                      _menuCard(
-                        icon: Icons.work_outline,
-                        title: 'Portofolio',
-                        color: const Color(0xFF006D77),
-                        onTap: () {
-                          _showDevelopmentMessage();
-                        },
-                      ),
-                      _menuCard(
-                        icon: Icons.search_outlined,
-                        title: 'Cari Proyek',
-                        color: const Color(0xFF83C5BE),
-                        onTap: () {
-                          _showDevelopmentMessage();
-                        },
-                      ),
-                      _menuCard(
-                        icon: Icons.chat_bubble_outline,
-                        title: 'Pesan',
-                        color: const Color(0xFFE29578),
-                        onTap: () {
-                          _showDevelopmentMessage();
-                        },
-                      ),
-                      _menuCard(
-                        icon: Icons.settings_outlined,
-                        title: 'Pengaturan',
-                        color: const Color(0xFF006D77),
-                        onTap: () {
-                          _showDevelopmentMessage();
-                        },
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-    );
+  Future<void> _refreshData() async {
+    await _loadDashboardStats();
+    await _loadRecommendedProjects();
   }
 
   void _showDevelopmentMessage() {
@@ -417,6 +234,527 @@ class _CreativeDashboardState extends State<CreativeDashboard> {
         backgroundColor: Color(0xFF424750),
         behavior: SnackBarBehavior.floating,
         duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFFBF8FE),
+      appBar: AppBar(
+        title: Text(
+          'Creative Dashboard',
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+          ),
+        ),
+        backgroundColor: Colors.white,
+        foregroundColor: const Color(0xFF1B1B1F),
+        elevation: 0,
+        actions: [
+          // Notification Icon
+          IconButton(
+            icon: const Icon(Icons.notifications_outlined, color: Color(0xFF424750)),
+            onPressed: _showDevelopmentMessage,
+          ),
+          // Logout button dengan loading indicator
+          _isLoggingOut
+              ? const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Color(0xFF006D77),
+                    ),
+                  ),
+                )
+              : IconButton(
+                  icon: const Icon(Icons.logout, color: Color(0xFF424750)),
+                  onPressed: _showLogoutConfirmation,
+                  tooltip: 'Logout',
+                ),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _refreshData,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header dengan gradient hijau tosca
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFF006D77), Color(0xFF83C5BE)],
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Selamat Bekerja,',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              color: Colors.white70,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _userName,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white24,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  'Creative Worker',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              if (_userBio.isNotEmpty)
+                                Expanded(
+                                  child: Text(
+                                    _userBio,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      color: Colors.white70,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Statistik
+                    Text(
+                      'Statistik',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF1B1B1F),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _statCard(
+                            title: 'Proyek Selesai',
+                            value: _dashboardStats?.completedProjects.toString() ?? '0',
+                            icon: Icons.check_circle_outline,
+                            color: const Color(0xFF006D77),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _statCard(
+                            title: 'Proyek Aktif',
+                            value: _dashboardStats?.ongoingProjects.toString() ?? '0',
+                            icon: Icons.hourglass_empty,
+                            color: const Color(0xFF83C5BE),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _statCard(
+                            title: 'Rating',
+                            value: _dashboardStats?.rating.toString() ?? '0.0',
+                            icon: Icons.star_outline,
+                            color: const Color(0xFFE29578),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _statCard(
+                            title: 'Total Earnings',
+                            value: 'Rp ${((_dashboardStats?.totalEarnings ?? 0) / 1000).toStringAsFixed(0)}k',
+                            icon: Icons.monetization_on_outlined,
+                            color: const Color(0xFF006D77),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Profile Performance (if available)
+                    if (_dashboardStats != null && (_dashboardStats!.profileViews > 0 || _dashboardStats!.newConnections > 0))
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Performa Profile',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF1B1B1F),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _infoCard(
+                                  title: 'Profile Views',
+                                  value: _dashboardStats!.profileViews.toString(),
+                                  icon: Icons.visibility_outlined,
+                                  color: const Color(0xFF006D77),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _infoCard(
+                                  title: 'New Connections',
+                                  value: _dashboardStats!.newConnections.toString(),
+                                  icon: Icons.people_outline,
+                                  color: const Color(0xFF83C5BE),
+                                  suffix: _dashboardStats!.newConnections > 0
+                                      ? '+${((_dashboardStats!.newConnections / 10).ceil())}%'
+                                      : null,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+                        ],
+                      ),
+
+                    // Info Akun
+                    Text(
+                      'Informasi Akun',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF1B1B1F),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    Card(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          children: [
+                            _infoRow(Icons.email_outlined, 'Email', _userEmail),
+                            const Divider(),
+                            _infoRow(Icons.phone_outlined, 'Telepon', _userPhone),
+                            const Divider(),
+                            _infoRow(Icons.location_on_outlined, 'Kota', _userCity),
+                            const Divider(),
+                            _infoRow(Icons.brush_outlined, 'Tipe', 'Creative Worker'),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Recommended Projects
+                    if (_recommendedProjects.isNotEmpty) ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Rekomendasi Proyek',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF1B1B1F),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () => _navigateTo('/explore-projects'),
+                            child: Text(
+                              'Lihat semua',
+                              style: GoogleFonts.inter(
+                                color: const Color(0xFF006D77),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      ..._recommendedProjects.map((project) => _recommendedProjectCard(project)),
+                    ],
+
+                    const SizedBox(height: 24),
+
+                    // Menu Cepat
+                    Text(
+                      'Menu Cepat',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF1B1B1F),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    GridView.count(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                      childAspectRatio: 1.5,
+                      children: [
+                        _menuCard(
+                          icon: Icons.search_outlined,
+                          title: 'Cari Proyek',
+                          color: const Color(0xFF006D77),
+                          onTap: () => _navigateTo('/explore-projects'),
+                        ),
+                        _menuCard(
+                          icon: Icons.work_outline,
+                          title: 'Proyek Saya',
+                          color: const Color(0xFF83C5BE),
+                          onTap: () => _navigateTo('/my-projects'),
+                        ),
+                        _menuCard(
+                          icon: Icons.photo_library_outlined,
+                          title: 'Portfolio',
+                          color: const Color(0xFFE29578),
+                          onTap: () => _navigateTo('/portfolio'),
+                        ),
+                        _menuCard(
+                          icon: Icons.person_outline,
+                          title: 'Edit Profile',
+                          color: const Color(0xFF006D77),
+                          onTap: () => _navigateTo('/edit-profile'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+
+  Widget _recommendedProjectCard(Project project) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFC3C6D1).withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  project.title,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF006D77).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  project.status == 'open' ? 'OPEN' : project.status.toUpperCase(),
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF006D77),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            project.description.length > 80
+                ? '${project.description.substring(0, 80)}...'
+                : project.description,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: const Color(0xFF424750),
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.attach_money, size: 14, color: const Color(0xFF006D77)),
+              const SizedBox(width: 4),
+              Text(
+                project.budget,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF006D77),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                project.duration,
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: const Color(0xFF424750),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.access_time, size: 12, color: const Color(0xFF424750)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, size: 24, color: color),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: color,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+    String? suffix,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, size: 24, color: color),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                value,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+              ),
+              if (suffix != null) ...[
+                const SizedBox(width: 4),
+                Text(
+                  suffix,
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.green,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: color,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }
@@ -447,46 +785,6 @@ class _CreativeDashboardState extends State<CreativeDashboard> {
                 color: const Color(0xFF1B1B1F),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _statCard({
-    required String title,
-    required String value,
-    required IconData icon,
-    required Color color,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.2)),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, size: 24, color: color),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: color,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            title,
-            style: GoogleFonts.inter(
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-              color: color,
-            ),
-            textAlign: TextAlign.center,
           ),
         ],
       ),
