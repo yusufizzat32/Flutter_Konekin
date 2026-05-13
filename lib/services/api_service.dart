@@ -511,6 +511,38 @@ class ApiService {
       };
     }
   }
+  
+  Future<Map<String, dynamic>> geocodeAddress(String query) async {
+    try {
+      final url = Uri.parse(
+        'https://nominatim.openstreetmap.org/search'
+        '?q=${Uri.encodeQueryComponent(query)}'
+        '&format=json&limit=1&countrycodes=id',
+      );
+ 
+      final response = await http.get(url, headers: {
+        'User-Agent': 'KonekinApp/1.0 (contact@konekin.id)',
+        'Accept': 'application/json',
+      }).timeout(const Duration(seconds: 10));
+ 
+      if (response.statusCode == 200) {
+        final List<dynamic> results = jsonDecode(response.body);
+        if (results.isNotEmpty) {
+          final first = results[0];
+          return {
+            'success': true,
+            'lat': first['lat'],
+            'lng': first['lon'],
+            'display_name': first['display_name'],
+          };
+        }
+        return {'success': false, 'message': 'Lokasi tidak ditemukan'};
+      }
+      return {'success': false, 'message': 'Gagal menghubungi layanan peta'};
+    } catch (e) {
+      return {'success': false, 'message': 'Error geocoding: $e'};
+    }
+  }
 
   // ───────────────────────────────────────────────────────────────────────────
   // ERROR HANDLER

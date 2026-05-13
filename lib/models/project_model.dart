@@ -1,5 +1,4 @@
 // lib/models/project_model.dart
-import '../models/project_model.dart';
 class Project {
   final int id;
   final String title;
@@ -36,41 +35,55 @@ class Project {
   });
 
   factory Project.fromJson(Map<String, dynamic> json) {
-    // Handle ID safely
+    // ── FIX: unwrap nested response jika data ada di dalam 'data' atau 'project' ──
+    final Map<String, dynamic> data = (json['data'] is Map<String, dynamic>)
+        ? json['data'] as Map<String, dynamic>
+        : (json['project'] is Map<String, dynamic>)
+            ? json['project'] as Map<String, dynamic>
+            : json;
+
+    // Handle ID safely — WAJIB > 0, kalau masih 0 berarti parse salah
     int parsedId = 0;
-    final idValue = json['id'];
+    final idValue = data['id'] ?? json['id'];
     if (idValue is int) {
       parsedId = idValue;
     } else if (idValue is String) {
       parsedId = int.tryParse(idValue) ?? 0;
     }
-    
+
     // Handle skills
     List<String> parsedSkills = [];
-    final skillsValue = json['skills'] ?? json['requirements'];
+    final skillsValue = data['skills'] ?? data['requirements'];
     if (skillsValue is List) {
       parsedSkills = skillsValue.map((e) => e.toString()).toList();
     } else if (skillsValue is String && skillsValue.isNotEmpty) {
-      parsedSkills = skillsValue.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+      parsedSkills = skillsValue
+          .split(',')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
     }
-    
+
     // Handle deadline
     DateTime? deadline;
-    if (json['deadline'] != null && json['deadline'].toString().isNotEmpty) {
-      deadline = DateTime.tryParse(json['deadline'].toString());
+    final deadlineRaw = data['deadline'] ?? data['expired_at'];
+    if (deadlineRaw != null && deadlineRaw.toString().isNotEmpty) {
+      deadline = DateTime.tryParse(deadlineRaw.toString());
     }
-    
+
     // Handle applicant count
     int? applicantCount;
-    final acValue = json['applicant_count'] ?? json['applications_count'];
+    final acValue = data['applicant_count'] ??
+        data['applications_count'] ??
+        data['applicants_count'];
     if (acValue is int) {
       applicantCount = acValue;
     } else if (acValue is String) {
       applicantCount = int.tryParse(acValue);
     }
-    
+
     // Handle duration
-    String duration = json['duration']?.toString() ?? '';
+    String duration = data['duration']?.toString() ?? '';
     if (duration.isEmpty && deadline != null) {
       final diff = deadline.difference(DateTime.now());
       if (diff.inDays <= 0) {
@@ -81,22 +94,24 @@ class Project {
         duration = '${(diff.inDays / 30).round()} bulan';
       }
     }
-    
+
     return Project(
       id: parsedId,
-      title: json['title']?.toString() ?? '',
-      description: json['description']?.toString() ?? '',
-      budget: json['budget']?.toString() ?? '0',
+      title: data['title']?.toString() ?? '',
+      description: data['description']?.toString() ?? '',
+      budget: data['budget']?.toString() ?? '0',
       duration: duration,
-      status: json['status']?.toString() ?? 'open',
-      category: json['category']?.toString() ?? 'General',
+      status: data['status']?.toString() ?? 'open',
+      category: data['category']?.toString() ?? 'General',
       skills: parsedSkills,
-      thumbnail: json['thumbnail']?.toString(),
-      umkmId: json['client_id'] is int ? json['client_id'] : int.tryParse(json['client_id']?.toString() ?? ''),
-      umkmName: json['client_name']?.toString() ?? json['umkm_name']?.toString(),
-      umkmCity: json['client_city']?.toString(),
-      createdAt: json['created_at'] != null 
-          ? (DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now())
+      thumbnail: data['thumbnail']?.toString(),
+      umkmId: data['client_id'] is int
+          ? data['client_id']
+          : int.tryParse(data['client_id']?.toString() ?? ''),
+      umkmName: data['client_name']?.toString() ?? data['umkm_name']?.toString(),
+      umkmCity: data['client_city']?.toString(),
+      createdAt: data['created_at'] != null
+          ? (DateTime.tryParse(data['created_at'].toString()) ?? DateTime.now())
           : DateTime.now(),
       deadline: deadline,
       applicantCount: applicantCount,

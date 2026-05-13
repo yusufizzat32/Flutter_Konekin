@@ -202,6 +202,20 @@ class _ProjectProgressDetailPageState
 
   // ─── Actions ────────────────────────────────────────────────────────────────
 
+  // ── FIX: ambil ID yang valid — prioritaskan dari _projectData (fresh dari server) ──
+  int get _resolvedProjectId {
+    // 1. dari data server yang sudah di-load
+    final fromServer = _projectData?['id'];
+    if (fromServer != null) {
+      final parsed = fromServer is int
+          ? fromServer
+          : int.tryParse(fromServer.toString()) ?? 0;
+      if (parsed > 0) return parsed;
+    }
+    // 2. dari widget (bisa saja 0 kalau parse JSON gagal)
+    return widget.project.id;
+  }
+
   Future<void> _handleDeleteProject() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -234,16 +248,29 @@ class _ProjectProgressDetailPageState
     );
 
     if (confirmed != true) return;
+
+    // ── FIX: guard — jangan hapus kalau ID masih 0 ──────────────────────────
+    final projectId = _resolvedProjectId;
+    if (projectId <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Gagal: ID proyek tidak valid. Coba refresh halaman.'),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+
     setState(() => _isDeleting = true);
-    final result = await _api.deleteUmkmProject(widget.project.id);
+    final result = await _api.deleteUmkmProject(projectId);
     if (!mounted) return;
     setState(() => _isDeleting = false);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(result['message'] ?? 'Proyek dihapus'),
-      backgroundColor: result['success'] ? const Color(0xFF006D77) : Colors.red,
+      backgroundColor:
+          result['success'] == true ? const Color(0xFF006D77) : Colors.red,
       behavior: SnackBarBehavior.floating,
     ));
-    if (result['success']) Navigator.pop(context, true);
+    if (result['success'] == true) Navigator.pop(context, true);
   }
 
   void _handleRate() {

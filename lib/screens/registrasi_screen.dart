@@ -65,6 +65,25 @@ class _RegistrasiScreenState extends State<RegistrasiScreen> {
   final _passCtrl     = TextEditingController();
   final _konfPassCtrl = TextEditingController();
 
+  // Bank fields (hanya untuk UMKM)
+  String? _selectedBank;
+  final _nomorRekeningCtrl   = TextEditingController();
+  final _namaPemilikRekCtrl  = TextEditingController();
+
+  static const List<String> _bankList = [
+    'BCA (Bank Central Asia)',
+    'Bank Mandiri',
+    'BNI (Bank Negara Indonesia)',
+    'BRI (Bank Rakyat Indonesia)',
+    'CIMB Niaga',
+    'Bank Permata',
+    'Maybank',
+    'DBS Indonesia',
+    'Bank Danamon',
+    'OCBC NISP',
+    'Bank Lainnya',
+  ];
+
   bool _obscurePass     = true;
   bool _obscureKonfPass = true;
   bool _isLoading       = false;
@@ -80,6 +99,8 @@ class _RegistrasiScreenState extends State<RegistrasiScreen> {
     _lokasiCtrl.dispose();
     _passCtrl.dispose();
     _konfPassCtrl.dispose();
+    _nomorRekeningCtrl.dispose();
+    _namaPemilikRekCtrl.dispose();
     super.dispose();
   }
 
@@ -167,6 +188,9 @@ class _RegistrasiScreenState extends State<RegistrasiScreen> {
       passwordConfirmation: _konfPassCtrl.text,
       phone: _teleponCtrl.text.trim(),
       city: _lokasiCtrl.text.trim(),
+      bankName: widget.userType == UserType.umkm ? _selectedBank : null,
+      bankAccountNumber: widget.userType == UserType.umkm ? _nomorRekeningCtrl.text.trim() : null,
+      bankAccountName: widget.userType == UserType.umkm ? _namaPemilikRekCtrl.text.trim() : null,
     );
 
     if (!mounted) return;
@@ -348,6 +372,39 @@ class _RegistrasiScreenState extends State<RegistrasiScreen> {
                     validator: _validateLokasi,
                     s: s, sh: sh,
                   ),
+                  // ── Section Bank (hanya UMKM) ─────────────────────────────
+                  if (widget.userType == UserType.umkm) ...[
+                    SizedBox(height: 20 * sh),
+                    _BankSectionDivider(s: s, sh: sh),
+                    SizedBox(height: 16 * sh),
+                    // Dropdown Nama Bank
+                    _BankDropdown(
+                      label: 'Nama Bank',
+                      value: _selectedBank,
+                      banks: _bankList,
+                      s: s, sh: sh,
+                      onChanged: (val) => setState(() => _selectedBank = val),
+                    ),
+                    SizedBox(height: 15 * sh),
+                    _Field(
+                      label: 'Nomor Rekening',
+                      placeholder: 'Contoh: 123456789',
+                      leadingIcon: Icons.credit_card_outlined,
+                      controller: _nomorRekeningCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      s: s, sh: sh,
+                    ),
+                    SizedBox(height: 15 * sh),
+                    _Field(
+                      label: 'Nama Pemilik Rekening',
+                      placeholder: 'Sesuai nama di buku tabungan',
+                      leadingIcon: Icons.person_pin_outlined,
+                      controller: _namaPemilikRekCtrl,
+                      keyboardType: TextInputType.name,
+                      s: s, sh: sh,
+                    ),
+                  ],
                   SizedBox(height: 15 * sh),
                   _Field(
                     label: 'Kata Sandi',
@@ -594,6 +651,183 @@ class _BottomBtn extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// =============================================================================
+// BANK SECTION DIVIDER
+// =============================================================================
+
+class _BankSectionDivider extends StatelessWidget {
+  final double s, sh;
+  const _BankSectionDivider({required this.s, required this.sh});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.all(12 * s),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEF2FF),
+        borderRadius: BorderRadius.circular(10 * s),
+        border: Border.all(color: const Color(0xFF1A4B84).withOpacity(0.15)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36 * s,
+            height: 36 * s,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A4B84).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8 * s),
+            ),
+            child: Icon(
+              Icons.account_balance_outlined,
+              size: 18 * s,
+              color: const Color(0xFF1A4B84),
+            ),
+          ),
+          SizedBox(width: 10 * s),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Informasi Rekening Bank',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13 * s,
+                    color: const Color(0xFF1A4B84),
+                  ),
+                ),
+                SizedBox(height: 2 * sh),
+                Text(
+                  'Untuk pencairan dana dari platform',
+                  style: GoogleFonts.inter(
+                    fontSize: 11 * s,
+                    color: const Color(0xFF424750),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// BANK DROPDOWN
+// =============================================================================
+
+class _BankDropdown extends StatelessWidget {
+  final String label;
+  final String? value;
+  final List<String> banks;
+  final ValueChanged<String?> onChanged;
+  final double s, sh;
+
+  const _BankDropdown({
+    required this.label,
+    required this.value,
+    required this.banks,
+    required this.onChanged,
+    required this.s,
+    required this.sh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.account_balance_wallet_outlined,
+                size: 15 * s, color: _cBlueMain),
+            SizedBox(width: 5 * s),
+            Text(
+              '$label *',
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w500,
+                fontSize: 14 * s,
+                color: _cDark,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 8 * sh),
+        Container(
+          decoration: BoxDecoration(
+            color: _cInputBg,
+            borderRadius: BorderRadius.circular(12 * s),
+            border: Border.all(color: Colors.transparent),
+          ),
+          child: DropdownButtonFormField<String>(
+            value: value,
+            decoration: InputDecoration(
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: 16 * s,
+                vertical: 14 * s,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12 * s),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12 * s),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12 * s),
+                borderSide: BorderSide(color: _cBlueMain, width: 1.5 * s),
+              ),
+              errorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12 * s),
+                borderSide: BorderSide(color: _cError, width: 1 * s),
+              ),
+              filled: true,
+              fillColor: _cInputBg,
+            ),
+            hint: Text(
+              'Pilih Bank',
+              style: GoogleFonts.inter(
+                fontSize: 16 * s,
+                color: _cMid.withOpacity(0.6),
+              ),
+            ),
+            style: GoogleFonts.inter(
+              fontSize: 15 * s,
+              color: _cDark,
+            ),
+            icon: Icon(Icons.keyboard_arrow_down,
+                color: _cMid, size: 20 * s),
+            isExpanded: true,
+            dropdownColor: Colors.white,
+            borderRadius: BorderRadius.circular(12 * s),
+            items: [
+              DropdownMenuItem<String>(
+                value: null,
+                child: Text(
+                  'Pilih Bank',
+                  style: GoogleFonts.inter(
+                      fontSize: 14 * s, color: _cMid.withOpacity(0.5)),
+                ),
+              ),
+              ...banks.map((bank) => DropdownMenuItem<String>(
+                    value: bank,
+                    child: Text(
+                      bank,
+                      style: GoogleFonts.inter(
+                          fontSize: 14 * s, color: _cDark),
+                    ),
+                  )),
+            ],
+            onChanged: onChanged,
+          ),
+        ),
+      ],
     );
   }
 }

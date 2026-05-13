@@ -40,6 +40,9 @@ dependencies:
   
   # Utility
   image_picker: ^1.0.5  # Upload foto profil/portfolio
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+
   http_parser: ^4.0.2
   shared_preferences: ^2.2.2  # Simpan token login
 

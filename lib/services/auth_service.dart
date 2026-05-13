@@ -215,20 +215,36 @@ class AuthService {
     required String passwordConfirmation,
     required String phone,
     required String city,
+    String? bankName,
+    String? bankAccountNumber,
+    String? bankAccountName,
   }) async {
     try {
+      final Map<String, dynamic> body = {
+        'type': type,
+        'name': name,
+        'email': email,
+        'password': password,
+        'password_confirmation': passwordConfirmation,
+        'phone': phone,
+        'city': city,
+      };
+
+      // Tambahkan field bank hanya jika diisi (opsional, khusus UMKM)
+      if (bankName != null && bankName.isNotEmpty) {
+        body['bank_name'] = bankName;
+      }
+      if (bankAccountNumber != null && bankAccountNumber.isNotEmpty) {
+        body['bank_account_number'] = bankAccountNumber;
+      }
+      if (bankAccountName != null && bankAccountName.isNotEmpty) {
+        body['bank_account_name'] = bankAccountName;
+      }
+
       final response = await http.post(
         Uri.parse('$baseUrl/register'),
         headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-        body: jsonEncode({
-          'type': type,
-          'name': name,
-          'email': email,
-          'password': password,
-          'password_confirmation': passwordConfirmation,
-          'phone': phone,
-          'city': city,
-        }),
+        body: jsonEncode(body),
       ).timeout(const Duration(seconds: 30));
       
       final data = jsonDecode(response.body);

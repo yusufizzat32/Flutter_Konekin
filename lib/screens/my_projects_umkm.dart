@@ -57,10 +57,16 @@ class _MyProjectsUmkmPageState extends State<MyProjectsUmkmPage>
           _projects = projectsList.map((e) {
             try {
               final p = Project.fromJson(Map<String, dynamic>.from(e));
-              debugPrint('🔍 Project: id=${p.id}, title=${p.title}, status=${p.status}');
+              if (p.id == 0) {
+                // ── FIX: log raw data kalau ID masih 0 untuk debugging ──
+                debugPrint('⚠️ Project ID=0! Raw JSON keys: ${e.keys.toList()}');
+                debugPrint('⚠️ Raw: $e');
+              } else {
+                debugPrint('✅ Project: id=${p.id}, title=${p.title}, status=${p.status}');
+              }
               return p;
             } catch (err) {
-              debugPrint('Error parsing project: $err');
+              debugPrint('❌ Error parsing project: $err | raw: $e');
               return null;
             }
           }).whereType<Project>().toList();
