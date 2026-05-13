@@ -1,4 +1,3 @@
-// lib/screens/my_projects_umkm.dart
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
@@ -15,13 +14,14 @@ class MyProjectsUmkmPage extends StatefulWidget {
 
 class _MyProjectsUmkmPageState extends State<MyProjectsUmkmPage>
     with AutomaticKeepAliveClientMixin {
+  
   @override
   bool get wantKeepAlive => true;
-
+  
   final ApiService _api = ApiService();
   List<Project> _projects = [];
   bool _isLoading = true;
-  int _selectedTab = 0; // 0: Semua, 1: Berjalan, 2: Selesai
+  int _selectedTab = 0; // 0: Aktif, 1: Selesai
 
   @override
   void initState() {
@@ -35,21 +35,37 @@ class _MyProjectsUmkmPageState extends State<MyProjectsUmkmPage>
 
     final result = await _api.getUmkmProjects();
 
+    debugPrint('🔍 getUmkmProjects result: $result');
+
     if (mounted) {
       setState(() {
         if (result['success'] == true && result['data'] != null) {
           final data = result['data'];
           List<dynamic> projectsList = [];
+
           if (data is List) {
             projectsList = data;
           } else if (data is Map) {
-            projectsList = data['projects'] ?? data['data'] ?? [];
+            projectsList = (data['projects'] ??
+                            data['data'] ??
+                            data['items'] ??
+                            []) as List<dynamic>;
           }
-          _projects = projectsList
-              .map((e) => Project.fromJson(Map<String, dynamic>.from(e)))
-              .toList();
+
+          debugPrint('🔍 Total projects dari API: ${projectsList.length}');
+
+          _projects = projectsList.map((e) {
+            try {
+              final p = Project.fromJson(Map<String, dynamic>.from(e));
+              debugPrint('🔍 Project: id=${p.id}, title=${p.title}, status=${p.status}');
+              return p;
+            } catch (err) {
+              debugPrint('Error parsing project: $err');
+              return null;
+            }
+          }).whereType<Project>().toList();
         } else {
-          _projects = [];
+          debugPrint('🔴 gagal load projects: ${result['message']}');
         }
         _isLoading = false;
       });
@@ -57,13 +73,21 @@ class _MyProjectsUmkmPageState extends State<MyProjectsUmkmPage>
   }
 
   List<Project> get _filteredProjects {
-    if (_selectedTab == 0) return _projects;
-    if (_selectedTab == 1) {
-      return _projects.where((p) =>
-          p.status != 'completed' && p.status != 'done' && p.status != 'closed').toList();
-    }
-    return _projects.where((p) =>
-        p.status == 'completed' || p.status == 'done').toList();
+    return _projects.where((p) {
+      if (_selectedTab == 0) {
+        // TAB AKTIF: semua status yang bukan selesai/dibatalkan
+        return p.status == 'open' ||
+               p.status == 'in_progress' ||
+               p.status == 'ongoing' ||
+               p.status == 'hired' ||
+               p.status == 'pending' ||
+               p.status == 'active' ||
+               p.status == 'published';
+      } else {
+        // TAB SELESAI
+        return p.status == 'completed' || p.status == 'done';
+      }
+    }).toList();
   }
 
   void _navigateToCreateProject() {
@@ -73,7 +97,8 @@ class _MyProjectsUmkmPageState extends State<MyProjectsUmkmPage>
     ).then((_) => _loadProjects());
   }
 
-  void _navigateToProjectStatus(Project project) {
+
+  void _onProjectTap(Project project) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -108,22 +133,20 @@ class _MyProjectsUmkmPageState extends State<MyProjectsUmkmPage>
       ),
       body: Column(
         children: [
-          // Tab
+          // TAB
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
-                _buildTab('Semua', 0),
+                _buildTab('Aktif', 0),
                 const SizedBox(width: 16),
-                _buildTab('Berjalan', 1),
-                const SizedBox(width: 16),
-                _buildTab('Selesai', 2),
+                _buildTab('Selesai', 1),
               ],
             ),
           ),
           const Divider(height: 0, thickness: 1, color: Color(0xFFEAE7ED)),
 
-          // Content
+          // CONTENT
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -136,9 +159,9 @@ class _MyProjectsUmkmPageState extends State<MyProjectsUmkmPage>
                           itemCount: _filteredProjects.length,
                           itemBuilder: (context, index) {
                             final project = _filteredProjects[index];
-                            return _ProjectStatusCard(
+                            return _ProjectCard(
                               project: project,
-                              onTap: () => _navigateToProjectStatus(project),
+                              onTap: () => _onProjectTap(project),
                             );
                           },
                         ),
@@ -233,47 +256,26 @@ class _MyProjectsUmkmPageState extends State<MyProjectsUmkmPage>
 }
 
 // ==========================================================================
-// CARD STATUS PROYEK (sesuai desain gambar)
+// CARD PROYEK
 // ==========================================================================
-class _ProjectStatusCard extends StatelessWidget {
+class _ProjectCard extends StatelessWidget {
   final Project project;
   final VoidCallback onTap;
 
-  const _ProjectStatusCard({required this.project, required this.onTap});
+  const _ProjectCard({required this.project, required this.onTap});
 
-  int get _progressValue {
-    if (project.status == 'completed' || project.status == 'done') return 100;
-    if (project.status == 'in_progress' || project.status == 'ongoing') return 65;
-    if (project.status == 'hired') return 10;
-    return 0;
-  }
-
-  String get _statusLabel {
+  Color _getStatusColor() {
     switch (project.status) {
       case 'open':
-        return 'MENUNGGU APPLY';
-      case 'hired':
-        return 'KREATOR DIPILIH';
-      case 'in_progress':
-      case 'ongoing':
-        return 'SEDANG DIKERJAKAN';
-      case 'completed':
-      case 'done':
-        return 'SELESAI';
-      default:
-        return project.status.toUpperCase();
-    }
-  }
-
-  Color get _statusColor {
-    switch (project.status) {
-      case 'open':
-        return const Color(0xFFE29578);
+      case 'pending':
+      case 'published':
+      case 'active':
+        return const Color(0xFF006D77);
       case 'hired':
         return const Color(0xFF1A4B84);
       case 'in_progress':
       case 'ongoing':
-        return const Color(0xFF006D77);
+        return const Color(0xFFE29578);
       case 'completed':
       case 'done':
         return const Color(0xFF83C5BE);
@@ -282,12 +284,60 @@ class _ProjectStatusCard extends StatelessWidget {
     }
   }
 
+  String _getStatusText() {
+    switch (project.status) {
+      case 'open':
+        return 'OPEN';
+      case 'pending':
+        return 'MENUNGGU';
+      case 'published':
+      case 'active':
+        return 'AKTIF';
+      case 'hired':
+        return 'KREATOR DIPILIH';
+      case 'in_progress':
+      case 'ongoing':
+        return 'SEDANG BERJALAN';
+      case 'completed':
+      case 'done':
+        return 'SELESAI';
+      default:
+        return project.status.toUpperCase();
+    }
+  }
+
+  String _formatDate(DateTime? date) {
+    if (date == null) return 'Tidak ditentukan';
+    return '${date.day} ${_getMonthName(date.month)} ${date.year}';
+  }
+
+  String _getMonthName(int month) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+      'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'
+    ];
+    return months[month - 1];
+  }
+
+  int _getProgressValue() {
+    if (project.status == 'completed' || project.status == 'done') return 100;
+    if (project.status == 'in_progress' || project.status == 'ongoing') return 65;
+    if (project.status == 'hired') return 10;
+    return 0;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isOngoing = project.status == 'in_progress' ||
+                      project.status == 'ongoing' ||
+                      project.status == 'hired';
+    final statusColor = _getStatusColor();
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
@@ -302,172 +352,156 @@ class _ProjectStatusCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header: Kategori & Status
-            Container(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: Row(
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: statusColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    _getStatusText(),
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: statusColor,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                if (project.applicantCount != null &&
+                    project.applicantCount! > 0 &&
+                    (project.status == 'open' ||
+                     project.status == 'pending' ||
+                     project.status == 'published'))
+                  Row(
+                    children: [
+                      const Icon(Icons.people_outline, size: 12, color: Color(0xFF424750)),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${project.applicantCount} pelamar',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: const Color(0xFF424750),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              project.title,
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              project.description.length > 100
+                  ? '${project.description.substring(0, 100)}...'
+                  : project.description,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: const Color(0xFF424750),
+                height: 1.4,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.attach_money, size: 14, color: Color(0xFF006D77)),
+                const SizedBox(width: 4),
+                Text(
+                  project.budget,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF006D77),
+                  ),
+                ),
+                const Spacer(),
+                const Icon(Icons.calendar_today, size: 12, color: Color(0xFF424750)),
+                const SizedBox(width: 4),
+                Text(
+                  'Deadline: ${_formatDate(project.deadline)}',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: const Color(0xFF424750),
+                  ),
+                ),
+              ],
+            ),
+            if (isOngoing) ...[
+              const SizedBox(height: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A4B84).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Progress',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: const Color(0xFF424750),
+                        ),
+                      ),
+                      Text(
+                        '${_getProgressValue()}%',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF006D77),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(
+                      value: _getProgressValue() / 100,
+                      backgroundColor: const Color(0xFFEAE7ED),
+                      color: const Color(0xFF006D77),
+                      minHeight: 6,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: onTap,
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF1A4B84)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
                     ),
                     child: Text(
-                      project.category.toUpperCase(),
+                      'Lihat Detail',
                       style: GoogleFonts.inter(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
                         color: const Color(0xFF1A4B84),
                       ),
                     ),
                   ),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: _statusColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      _statusLabel,
-                      style: GoogleFonts.inter(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: _statusColor,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            // Body
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    project.title,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    project.description.length > 80
-                        ? '${project.description.substring(0, 80)}...'
-                        : project.description,
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      color: const Color(0xFF424750),
-                      height: 1.4,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      const Icon(Icons.calendar_today, size: 12, color: Color(0xFF424750)),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Deadline: ${_formatDate(project.deadline)}',
-                        style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF424750)),
-                      ),
-                      const Spacer(),
-                      const Icon(Icons.attach_money, size: 14, color: Color(0xFF006D77)),
-                      const SizedBox(width: 4),
-                      Text(
-                        project.budget,
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF006D77),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  // Progress Bar
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Progress',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              color: const Color(0xFF424750),
-                            ),
-                          ),
-                          Text(
-                            '$_progressValue%',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFF006D77),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: LinearProgressIndicator(
-                          value: _progressValue / 100,
-                          backgroundColor: const Color(0xFFEAE7ED),
-                          color: const Color(0xFF006D77),
-                          minHeight: 6,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  // Tombol Lihat Detail
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: onTap,
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Color(0xFF1A4B84)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                      ),
-                      child: Text(
-                        'Lihat Detail',
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF1A4B84),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ],
         ),
       ),
     );
-  }
-
-  String _formatDate(DateTime? date) {
-    if (date == null) return 'Tidak ditentukan';
-    return '${date.day} ${_getMonthName(date.month)} ${date.year}';
-  }
-
-  String _getMonthName(int month) {
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
-      'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'
-    ];
-    return months[month - 1];
   }
 }

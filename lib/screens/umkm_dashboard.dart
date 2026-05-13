@@ -10,7 +10,7 @@ import 'my_projects_umkm.dart';
 import 'explore_creatives.dart';
 import 'profile_umkm.dart';
 import 'project_applicants.dart';
-import 'project_progress_detail.dart';
+import 'project_detail.dart';
 import 'creative_detail_page.dart';
 import 'ai_recommendation_page.dart';
 
@@ -24,7 +24,7 @@ class UmkmDashboard extends StatefulWidget {
 class _UmkmDashboardState extends State<UmkmDashboard> {
   final AuthService _auth = AuthService();
   final ApiService _api = ApiService();
-
+  
   int _currentIndex = 0;
 
   Map<String, dynamic> _userData = {};
@@ -44,13 +44,13 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
 
   Future<void> _loadAllData() async {
     setState(() => _isLoading = true);
-
+    
     await Future.wait([
       _loadUserAndDashboard(),
-      _loadProjects(),
+      _loadRecentProjects(),
       _loadCreativeRecommendations(),
     ]);
-
+    
     if (mounted) {
       setState(() => _isLoading = false);
     }
@@ -59,7 +59,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
   Future<void> _loadUserAndDashboard() async {
     final cachedName = await _auth.getUserName();
     final cachedData = await _auth.getUserData();
-
+    
     if (mounted) {
       setState(() {
         _userData = cachedData ?? {};
@@ -69,11 +69,11 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
     }
 
     final result = await _api.getUMKMDashboard();
-
+    
     if (mounted && result['success'] == true && result['data'] != null) {
       final data = Map<String, dynamic>.from(result['data']);
       final apiUser = data['user'] as Map<String, dynamic>?;
-
+      
       if (apiUser != null) {
         setState(() {
           _userName = apiUser['name']?.toString() ?? _userName;
@@ -93,91 +93,95 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
     }
   }
 
-  Future<void> _loadProjects() async {
-    final result = await _api.getUmkmProjects();
+  Future<void> _loadRecentProjects() async {
+  final result = await _api.getUmkmProjects();
 
-    if (mounted && result['success'] == true && result['data'] != null) {
-      try {
-        final raw = result['data'];
-        List<dynamic> projectsList = [];
-
-        if (raw is List) {
-          projectsList = raw;
-        } else if (raw is Map) {
-          projectsList = raw['projects'] as List? ?? raw['data'] as List? ?? [];
-        }
-
-        final parsed = <Project>[];
-        for (var e in projectsList) {
-          try {
-            parsed.add(Project.fromJson(Map<String, dynamic>.from(e)));
-          } catch (err) {
-            debugPrint('Error parsing project item: $err');
-          }
-        }
-
-        if (mounted) {
-          setState(() {
-            _recentProjects = parsed;
-          });
-        }
-      } catch (e) {
-        debugPrint('Error loading projects: $e');
-      }
-    }
-  }
-
-  Future<void> _loadCreativeRecommendations() async {
-    setState(() => _isLoadingCreatives = true);
-
+  if (mounted && result['success'] == true && result['data'] != null) {
     try {
-      final result = await _api.getRecommendedCreatives();
+      final raw = result['data'];
+      List<dynamic> projectsList = [];
+
+      // Handle semua kemungkinan bentuk response
+      if (raw is List) {
+        projectsList = raw;
+      } else if (raw is Map) {
+        projectsList = raw['projects'] as List? ?? 
+                       raw['data'] as List? ?? 
+                       [];
+      }
+
+      final parsed = <Project>[];
+      for (var e in projectsList) {
+        try {
+          parsed.add(Project.fromJson(Map<String, dynamic>.from(e)));
+        } catch (err) {
+          debugPrint('Error parsing project item: $err');
+        }
+      }
 
       if (mounted) {
         setState(() {
-          if (result['success'] == true && result['data'] != null) {
-            final raw = result['data'];
-            List<dynamic> list = [];
-            if (raw is List) {
-              list = raw;
-            } else if (raw is Map) {
-              list = raw['creatives'] ?? raw['data'] ?? raw['users'] ?? [];
-            }
-
-            _recommendedCreatives = list.map((item) {
-              final creative = Map<String, dynamic>.from(item);
-              return {
-                'id': creative['id']?.toString() ?? '',
-                'name': creative['name']?.toString() ?? 'Creative Worker',
-                'role': creative['role']?.toString() ?? creative['category']?.toString() ?? '',
-                'rating': double.tryParse(creative['rating']?.toString() ?? '0') ?? 0.0,
-                'skills': creative['skills'] is List
-                    ? List<String>.from(creative['skills'])
-                    : <String>[],
-                'city': creative['city']?.toString() ?? '',
-                'profile_photo': creative['profile_photo']?.toString(),
-                'completed_projects': creative['completed_projects'] ?? 0,
-                'portfolio_count': creative['portfolio_count'] ?? 0,
-                'relevance_score': double.tryParse(creative['relevance_score']?.toString() ?? '0') ?? 0.0,
-              };
-            }).toList();
-          }
-          _isLoadingCreatives = false;
+          _recentProjects = parsed.take(3).toList();
         });
       }
     } catch (e) {
-      debugPrint('Error loading creative recommendations: $e');
-      if (mounted) setState(() {
-        _recommendedCreatives = [];
+      debugPrint('Error loading recent projects: $e');
+    }
+  }
+}
+
+  Future<void> _loadCreativeRecommendations() async {
+  setState(() => _isLoadingCreatives = true);
+  
+  try {
+    final result = await _api.getRecommendedCreatives();
+    
+    if (mounted) {
+      setState(() {
+        if (result['success'] == true && result['data'] != null) {
+          final raw = result['data'];
+          // Handle jika data adalah List langsung ATAU Map yang berisi list
+          List<dynamic> list = [];
+          if (raw is List) {
+            list = raw;
+          } else if (raw is Map) {
+            list = raw['creatives'] ?? raw['data'] ?? raw['users'] ?? [];
+          }
+          
+          _recommendedCreatives = list.map((item) {
+            final creative = Map<String, dynamic>.from(item);
+            return {
+              'id': creative['id']?.toString() ?? '',
+              'name': creative['name']?.toString() ?? 'Creative Worker',
+              'role': creative['role']?.toString() ?? creative['category']?.toString() ?? '',
+              'rating': double.tryParse(creative['rating']?.toString() ?? '0') ?? 0.0,
+              'skills': creative['skills'] is List 
+                  ? List<String>.from(creative['skills']) 
+                  : <String>[],
+              'city': creative['city']?.toString() ?? '',
+              'profile_photo': creative['profile_photo']?.toString(),
+              'completed_projects': creative['completed_projects'] ?? 0,
+              'portfolio_count': creative['portfolio_count'] ?? 0,
+              'relevance_score': double.tryParse(creative['relevance_score']?.toString() ?? '0') ?? 0.0,
+            };
+          }).toList();
+        }
         _isLoadingCreatives = false;
       });
     }
+  } catch (e) {
+    debugPrint('Error loading creative recommendations: $e');
+    if (mounted) setState(() {
+      _recommendedCreatives = [];
+      _isLoadingCreatives = false;
+    });
   }
+}
 
   void _navigateToCreateProject() {
     Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const CreateProjectPage()),
+      context, 
+      MaterialPageRoute(builder: (_) => const CreateProjectPage())
     ).then((_) => _loadAllData());
   }
 
@@ -188,11 +192,20 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
     ).then((_) => _loadAllData());
   }
 
-  void _navigateToProjectStatus(Project project) {
+  void _navigateToProjectDetail(Project project) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ProjectProgressDetailPage(project: project),
+        builder: (_) => ProjectDetailPage(projectId: project.id),
+      ),
+    ).then((_) => _loadAllData());
+  }
+
+  void _navigateToApplicants(Project project) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProjectApplicantsPage(project: project),
       ),
     ).then((_) => _loadAllData());
   }
@@ -216,7 +229,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
             const SizedBox(height: 20),
             _buildRecommendedCreatives(),
             const SizedBox(height: 20),
-            _buildCollaborationStatusSection(),
+            _buildRecentProjectsSection(),
             const SizedBox(height: 16),
           ],
         ),
@@ -225,7 +238,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
   }
 
   // ==================== PROFILE HEADER ====================
-
+  
   Widget _buildProfileHeader() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -312,7 +325,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
   }
 
   // ==================== STATS GRID ====================
-
+  
   Widget _buildStatsGrid() {
     return GridView.count(
       shrinkWrap: true,
@@ -432,8 +445,8 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
     );
   }
 
-  // ==================== QUICK ACTIONS ====================
-
+  // ==================== QUICK ACTIONS — DITAMBAH REKOMENDASI AI ====================
+  
   Widget _buildQuickActions() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -509,8 +522,8 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
     );
   }
 
-  // ==================== RECOMMENDED CREATIVES ====================
-
+  // ==================== RECOMMENDED CREATIVES — DITAMBAH LINK KE AI ====================
+  
   Widget _buildRecommendedCreatives() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -562,7 +575,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
           ],
         ),
         const SizedBox(height: 10),
-
+        
         if (_isLoadingCreatives)
           const Center(
             child: Padding(
@@ -761,13 +774,16 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
     );
   }
 
-  // ==================== COLLABORATION STATUS SECTION (BARU) ====================
+  // ==================== RECENT PROJECTS ====================
+  
+  Widget _buildRecentProjectsSection() {
+    // Hanya tampilkan proyek yang sudah progress 100% (hired/in_progress dengan progress tinggi)
+    // Karena kita belum punya data progress dari API projects list, cek status hired/in_progress
+    final activeProjects = _recentProjects.where((p) =>
+        p.status == 'hired' || p.status == 'in_progress' || p.status == 'ongoing').toList();
 
-  Widget _buildCollaborationStatusSection() {
-    // Hanya proyek dengan status hiring/ongoing (sudah ada kreator terpilih)
-    final collaborationProjects = _recentProjects.where((p) {
-      return p.status == 'hired' || p.status == 'in_progress' || p.status == 'ongoing';
-    }).toList();
+    // Jika tidak ada proyek aktif/kerjasama, sembunyikan section ini
+    if (activeProjects.isEmpty) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -797,143 +813,201 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
           ],
         ),
         const SizedBox(height: 10),
-        if (collaborationProjects.isEmpty)
-          _buildEmptyCollaborationState()
-        else
-          ...collaborationProjects.map((project) => _collaborationCard(project)),
+        ...activeProjects.map((project) => _statusKerjasamaCard(project)),
       ],
     );
   }
 
-  Widget _buildEmptyCollaborationState() {
+  Widget _statusKerjasamaCard(Project project) {
+    // Tentukan label status kerjasama
+    String statusLabel;
+    Color statusColor;
+    IconData statusIcon;
+
+    switch (project.status) {
+      case 'hired':
+        statusLabel = 'UNDANGAN DITERIMA';
+        statusColor = const Color(0xFF006D77);
+        statusIcon = Icons.handshake_outlined;
+        break;
+      case 'in_progress':
+      case 'ongoing':
+        statusLabel = 'SEDANG BERJALAN';
+        statusColor = const Color(0xFFE29578);
+        statusIcon = Icons.trending_up;
+        break;
+      default:
+        statusLabel = project.status.toUpperCase();
+        statusColor = const Color(0xFF424750);
+        statusIcon = Icons.work_outline;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [statusColor.withOpacity(0.08), Colors.white],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: statusColor.withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: () => _navigateToProjectDetail(project),
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: statusColor.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(statusIcon, size: 10, color: statusColor),
+                          const SizedBox(width: 4),
+                          Text(
+                            statusLabel,
+                            style: GoogleFonts.inter(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              color: statusColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Spacer(),
+                    if (project.applicantCount != null && project.applicantCount! > 0)
+                      Row(
+                        children: [
+                          Icon(Icons.people_outline, size: 12, color: const Color(0xFF424750)),
+                          const SizedBox(width: 3),
+                          Text(
+                            '${project.applicantCount} apply',
+                            style: GoogleFonts.inter(fontSize: 10, color: const Color(0xFF424750)),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  project.title,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: const Color(0xFF1B1B1F),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.attach_money, size: 13, color: const Color(0xFF006D77)),
+                    Text(
+                      project.budget,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF006D77),
+                      ),
+                    ),
+                    const Spacer(),
+                    // Tombol aksi
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: statusColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        project.status == 'hired' ? 'Bayar Sekarang' : 'Lihat Detail',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyProjectState() {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8)],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         children: [
-          Icon(Icons.handshake_outlined, size: 48, color: const Color(0xFF424750).withOpacity(0.4)),
-          const SizedBox(height: 12),
+          Icon(Icons.folder_open_outlined, size: 40, color: const Color(0xFF424750).withOpacity(0.4)),
+          const SizedBox(height: 10),
           Text(
-            'Belum ada kerja sama aktif',
-            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, fontSize: 14, color: const Color(0xFF424750)),
+            'Belum ada proyek',
+            style: GoogleFonts.plusJakartaSans(
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              color: const Color(0xFF424750),
+            ),
           ),
           const SizedBox(height: 6),
           Text(
-            'Setelah kreator dipilih, status proyek akan muncul di sini.',
+            'Unggah proyek pertamamu untuk\nmenemukan talenta terbaik.',
             textAlign: TextAlign.center,
-            style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF424750)),
+            style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF424750), height: 1.4),
           ),
           const SizedBox(height: 12),
           ElevatedButton.icon(
             onPressed: _navigateToCreateProject,
             icon: const Icon(Icons.add_circle_outline, size: 16),
-            label: const Text('Buat Proyek Baru'),
+            label: const Text('Buat Proyek'),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF1A4B84),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              textStyle: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
             ),
           ),
         ],
       ),
     );
   }
-
-  Widget _collaborationCard(Project project) {
-    final progress = (project.status == 'in_progress' || project.status == 'ongoing')
-        ? 65
-        : (project.status == 'hired' ? 10 : 0);
-    final creativeName = project.umkmName ?? 'Creative Worker'; // sesuaikan dengan field yang ada
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8)],
-      ),
-      child: InkWell(
-        onTap: () => _navigateToProjectStatus(project),
-        borderRadius: BorderRadius.circular(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1A4B84).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.work_outline, color: Color(0xFF1A4B84), size: 20),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        project.title,
-                        style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, fontSize: 14),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Kreator: $creativeName',
-                        style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF424750)),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF006D77).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '$progress%',
-                    style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF006D77)),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: LinearProgressIndicator(
-                value: progress / 100,
-                backgroundColor: const Color(0xFFEAE7ED),
-                color: const Color(0xFF006D77),
-                minHeight: 6,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Text(
-                  'Lihat Detail →',
-                  style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF1A4B84)),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ==================== BOTTOM NAVIGATION ====================
 
   @override
   Widget build(BuildContext context) {
@@ -958,8 +1032,8 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
         ),
         backgroundColor: Colors.white,
         elevation: 0,
-        leading: _currentIndex == 0
-            ? const SizedBox.shrink()
+        leading: _currentIndex == 0 
+            ? const SizedBox.shrink() 
             : IconButton(
                 icon: const Icon(Icons.arrow_back_ios_new, color: Color(0xFF1A4B84), size: 18),
                 onPressed: () => setState(() => _currentIndex = 0),
@@ -985,7 +1059,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
           BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: 'Beranda'),
           BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), activeIcon: Icon(Icons.explore), label: 'Eksplor'),
           BottomNavigationBarItem(icon: Icon(Icons.auto_awesome_outlined), activeIcon: Icon(Icons.auto_awesome), label: 'Rekomen AI'),
-          BottomNavigationBarItem(icon: Icon(Icons.work_outline), activeIcon: Icon(Icons.work), label: 'Proyek'),
+          BottomNavigationBarItem(icon: Icon(Icons.assignment_outlined), activeIcon: Icon(Icons.assignment), label: 'Status Proyek'),
           BottomNavigationBarItem(icon: Icon(Icons.person_outline), activeIcon: Icon(Icons.person), label: 'Profil'),
         ],
       ),
@@ -994,18 +1068,12 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
 
   String _getAppBarTitle() {
     switch (_currentIndex) {
-      case 0:
-        return 'Dashboard';
-      case 1:
-        return 'Eksplor Kreator';
-      case 2:
-        return 'Rekomendasi AI';
-      case 3:
-        return 'Proyek Saya';
-      case 4:
-        return 'Profil';
-      default:
-        return 'Konekin';
+      case 0: return 'Dashboard';
+      case 1: return 'Eksplor Kreator';
+      case 2: return 'Rekomendasi AI';
+      case 3: return 'Status Proyek';
+      case 4: return 'Profil';
+      default: return 'Konekin';
     }
   }
 }
