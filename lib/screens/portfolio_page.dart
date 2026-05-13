@@ -1,4 +1,3 @@
-// lib/screens/portfolio_page.dart
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';

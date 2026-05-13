@@ -1,4 +1,4 @@
-// main.dart - Fixed Version
+// main.dart - Fixed Version dengan SplashScreen dan AuthGuard yang benar
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -15,17 +15,20 @@ import 'screens/portfolio_page.dart';
 import 'screens/edit_profile.dart';
 import 'screens/create_project.dart';
 import 'services/auth_service.dart';
+import 'screens/explore_creatives.dart';
+import 'screens/creative_detail_page.dart';
+import 'screens/my_projects_umkm.dart';
+import 'screens/profile_umkm.dart';
+import 'screens/ai_recommendation_page.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Lock to portrait orientation to match Figma designs
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
 
-  // Set status bar to transparent so splash bg shows through
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -80,21 +83,18 @@ class KonekinApp extends StatelessWidget {
               (context) => const UmkmDashboard(),
               ['umkm'],
             );
-          
           case '/creative/dashboard':
             return _buildProtectedRoute(
               settings,
               (context) => const CreativeDashboard(),
               ['creative_worker'],
             );
-          
           case '/explore-projects':
             return _buildProtectedRoute(
               settings,
               (context) => const ExploreProjectsPage(),
               ['creative_worker'],
             );
-          
           case '/project-detail':
             final projectId = settings.arguments as int? ?? 0;
             return _buildProtectedRoute(
@@ -102,7 +102,6 @@ class KonekinApp extends StatelessWidget {
               (context) => ProjectDetailPage(projectId: projectId),
               ['creative_worker'],
             );
-          
           case '/my-projects':
             final userType = settings.arguments as String? ?? 'creative';
             return _buildProtectedRoute(
@@ -110,28 +109,36 @@ class KonekinApp extends StatelessWidget {
               (context) => MyProjectsPage(userType: userType),
               ['umkm', 'creative_worker'],
             );
-          
+          case '/umkm/my-projects':
+            return _buildProtectedRoute(
+              settings,
+              (context) => const MyProjectsUmkmPage(),
+              ['umkm'],
+            );
           case '/portfolio':
             return _buildProtectedRoute(
               settings,
               (context) => const PortfolioPage(),
               ['creative_worker'],
             );
-          
           case '/edit-profile':
             return _buildProtectedRoute(
               settings,
               (context) => const EditProfilePage(),
               ['umkm', 'creative_worker'],
             );
-          
           case '/create-project':
             return _buildProtectedRoute(
               settings,
               (context) => const CreateProjectPage(),
               ['umkm'],
             );
-          
+          case '/ai-recommendation':
+            return _buildProtectedRoute(
+              settings,
+              (context) => const AiRecommendationPage(),
+              ['umkm'],
+            );
           default:
             return null;
         }
@@ -172,35 +179,55 @@ class KonekinApp extends StatelessWidget {
 
   Future<bool> _checkAuthAndRole(BuildContext context, List<String> allowedRoles) async {
     final authService = AuthService();
-    final isLoggedIn = await authService.isLoggedIn();
     
-    if (!isLoggedIn) {
-      if (context.mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-        });
-      }
+    // 1. Cek token ada
+    final token = await authService.getToken();
+    if (token == null || token.isEmpty || token == 'Bearer ') {
+      _redirectToLogin(context);
       return false;
     }
     
-    final userType = await authService.getUserType();
-    
-    if (userType == null || !allowedRoles.contains(userType)) {
-      if (context.mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Anda tidak memiliki akses ke halaman ini'),
-              backgroundColor: Colors.red,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-          Navigator.pushNamedAndRemoveUntil(context, '/get-started', (route) => false);
-        });
+    // 2. Validasi token ke server (cek expired)
+    final isValid = await authService.validateToken();
+    if (!isValid) {
+      // Coba refresh token
+      final refreshResult = await authService.refreshToken();
+      if (refreshResult['success'] != true) {
+        _redirectToLogin(context);
+        return false;
       }
+    }
+    
+    // 3. Cek role
+    final userType = await authService.getUserType();
+    if (userType == null || !allowedRoles.contains(userType)) {
+      _showAccessDenied(context);
       return false;
     }
     
     return true;
+  }
+  
+  void _redirectToLogin(BuildContext context) {
+    if (context.mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+      });
+    }
+  }
+  
+  void _showAccessDenied(BuildContext context) {
+    if (context.mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Anda tidak memiliki akses ke halaman ini'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.pushNamedAndRemoveUntil(context, '/get-started', (route) => false);
+      });
+    }
   }
 }

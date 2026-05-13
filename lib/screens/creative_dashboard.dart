@@ -1,8 +1,3 @@
-// lib/screens/creative_dashboard.dart
-// =============================================================================
-// Creative Worker Dashboard - Full Integration with AuthService & API
-// =============================================================================
-
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_service.dart';
@@ -43,6 +38,37 @@ class _CreativeDashboardState extends State<CreativeDashboard> {
   // Loading States
   bool _isLoading = true;
   bool _isLoggingOut = false;
+  
+  // Dummy recommended projects untuk sementara jika API belum siap
+  final List<Map<String, dynamic>> _dummyProjects = [
+    {
+      'id': 1,
+      'title': 'Desain Logo untuk Cafe',
+      'description': 'Mencari desainer logo untuk cafe modern dengan konsep minimalis.',
+      'budget': 'Rp 1.000.000 - 2.000.000',
+      'duration': '1 minggu',
+      'status': 'open',
+      'skills': ['Logo Design', 'Illustrator'],
+    },
+    {
+      'id': 2,
+      'title': 'Social Media Content Creator',
+      'description': 'Membuat konten Instagram untuk produk fashion.',
+      'budget': 'Rp 500.000 - 1.000.000',
+      'duration': '2 minggu',
+      'status': 'open',
+      'skills': ['Content Creation', 'Canva', 'Copywriting'],
+    },
+    {
+      'id': 3,
+      'title': 'Website UMKM',
+      'description': 'Membangun website sederhana untuk UMKM makanan.',
+      'budget': 'Rp 3.000.000 - 5.000.000',
+      'duration': '1 bulan',
+      'status': 'open',
+      'skills': ['Web Development', 'HTML/CSS', 'JavaScript'],
+    },
+  ];
 
   @override
   void initState() {
@@ -90,19 +116,77 @@ class _CreativeDashboardState extends State<CreativeDashboard> {
   }
 
   Future<void> _loadRecommendedProjects() async {
-    final result = await _api.getProjects();
-    
-    if (mounted && result['success'] && result['data'] != null) {
-      final projectsData = result['data']['projects'] ?? result['data'];
-      if (projectsData is List) {
-        setState(() {
-          _recommendedProjects = projectsData.take(3).map((e) => Project.fromJson(e)).toList();
-        });
+    try {
+      final result = await _api.getProjects();
+      
+      if (mounted && result['success'] == true && result['data'] != null) {
+        dynamic data = result['data'];
+        List<dynamic> projectsArray = [];
+        
+        if (data is Map) {
+          if (data.containsKey('projects')) {
+            if (data['projects'] is List) {
+              projectsArray = data['projects'] as List;
+            }
+          } else if (data.containsKey('data')) {
+            if (data['data'] is List) {
+              projectsArray = data['data'] as List;
+            }
+          }
+        } else if (data is List) {
+          projectsArray = data;
+        }
+        
+        if (projectsArray.isNotEmpty) {
+          final List<Project> tempProjects = [];
+          for (var item in projectsArray) {
+            if (item is Map) {
+              try {
+                final safeItem = Map<String, dynamic>.from(item);
+                if (safeItem['id'] is String) {
+                  safeItem['id'] = int.tryParse(safeItem['id']) ?? 0;
+                }
+                tempProjects.add(Project.fromJson(safeItem));
+              } catch (e) {
+                print('Error parsing item: $e');
+              }
+            }
+          }
+          setState(() {
+            _recommendedProjects = tempProjects.take(3).toList();
+          });
+        } else {
+          // Gunakan dummy data jika API tidak mengembalikan data
+          _loadDummyProjects();
+        }
+      } else {
+        _loadDummyProjects();
       }
+    } catch (e) {
+      print('Error in _loadRecommendedProjects: $e');
+      _loadDummyProjects();
     }
   }
-
-  // ── Logout dengan Konfirmasi ───────────────────────────────────────────────
+  
+  void _loadDummyProjects() {
+    final List<Project> tempProjects = [];
+    for (var item in _dummyProjects) {
+      tempProjects.add(Project(
+        id: item['id'],
+        title: item['title'],
+        description: item['description'],
+        budget: item['budget'],
+        duration: item['duration'],
+        status: item['status'],
+        category: 'General',
+        skills: List<String>.from(item['skills']),
+        createdAt: DateTime.now(),
+      ));
+    }
+    setState(() {
+      _recommendedProjects = tempProjects;
+    });
+  }
 
   Future<void> _showLogoutConfirmation() async {
     showDialog(
@@ -204,23 +288,24 @@ class _CreativeDashboardState extends State<CreativeDashboard> {
   }
 
   void _navigateTo(String route, {Object? arguments}) {
-    Navigator.push(context, MaterialPageRoute(
-      builder: (context) {
-        switch (route) {
-          case '/explore-projects':
-            return const ExploreProjectsPage();
-          case '/my-projects':
-            return MyProjectsPage(userType: 'creative');
-          case '/portfolio':
-            return const PortfolioPage();
-          case '/edit-profile':
-            return EditProfilePage(userData: _userData);
-          default:
-            return const SizedBox.shrink();
-        }
-      },
-    )).then((_) => _refreshData());
-  }
+  Navigator.push(context, MaterialPageRoute(
+    builder: (context) {
+      switch (route) {
+        case '/explore-projects':
+          return const ExploreProjectsPage();
+        case '/my-projects':
+          return MyProjectsPage(userType: 'creative');
+        case '/portfolio':
+          return const PortfolioPage();
+        case '/edit-profile':
+          // PERBAIKAN: Hapus const
+          return EditProfilePage();
+        default:
+          return const SizedBox.shrink();
+      }
+    },
+  )).then((_) => _refreshData());
+}
 
   Future<void> _refreshData() async {
     await _loadDashboardStats();
@@ -254,12 +339,10 @@ class _CreativeDashboardState extends State<CreativeDashboard> {
         foregroundColor: const Color(0xFF1B1B1F),
         elevation: 0,
         actions: [
-          // Notification Icon
           IconButton(
             icon: const Icon(Icons.notifications_outlined, color: Color(0xFF424750)),
             onPressed: _showDevelopmentMessage,
           ),
-          // Logout button dengan loading indicator
           _isLoggingOut
               ? const Padding(
                   padding: EdgeInsets.all(12),

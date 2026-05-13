@@ -1,4 +1,5 @@
 // lib/models/project_model.dart
+import '../models/project_model.dart';
 class Project {
   final int id;
   final String title;
@@ -35,29 +36,73 @@ class Project {
   });
 
   factory Project.fromJson(Map<String, dynamic> json) {
-    // Handle various response structures
-    final data = json['data'] ?? json;
-    final project = data['project'] ?? data;
+    // Handle ID safely
+    int parsedId = 0;
+    final idValue = json['id'];
+    if (idValue is int) {
+      parsedId = idValue;
+    } else if (idValue is String) {
+      parsedId = int.tryParse(idValue) ?? 0;
+    }
+    
+    // Handle skills
+    List<String> parsedSkills = [];
+    final skillsValue = json['skills'] ?? json['requirements'];
+    if (skillsValue is List) {
+      parsedSkills = skillsValue.map((e) => e.toString()).toList();
+    } else if (skillsValue is String && skillsValue.isNotEmpty) {
+      parsedSkills = skillsValue.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    }
+    
+    // Handle deadline
+    DateTime? deadline;
+    if (json['deadline'] != null && json['deadline'].toString().isNotEmpty) {
+      deadline = DateTime.tryParse(json['deadline'].toString());
+    }
+    
+    // Handle applicant count
+    int? applicantCount;
+    final acValue = json['applicant_count'] ?? json['applications_count'];
+    if (acValue is int) {
+      applicantCount = acValue;
+    } else if (acValue is String) {
+      applicantCount = int.tryParse(acValue);
+    }
+    
+    // Handle duration
+    String duration = json['duration']?.toString() ?? '';
+    if (duration.isEmpty && deadline != null) {
+      final diff = deadline.difference(DateTime.now());
+      if (diff.inDays <= 0) {
+        duration = 'Hari ini';
+      } else if (diff.inDays < 30) {
+        duration = '${diff.inDays} hari';
+      } else {
+        duration = '${(diff.inDays / 30).round()} bulan';
+      }
+    }
     
     return Project(
-      id: project['id'] ?? 0,
-      title: project['title'] ?? '',
-      description: project['description'] ?? '',
-      budget: project['budget']?.toString() ?? '0',
-      duration: project['duration'] ?? '',
-      status: project['status'] ?? 'open',
-      category: project['category'] ?? 'General',
-      skills: (project['skills'] as List?)?.map((e) => e.toString()).toList() ?? [],
-      thumbnail: project['thumbnail'],
-      umkmId: project['umkm_id'],
-      umkmName: project['umkm_name'],
-      umkmCity: project['umkm_city'],
-      createdAt: DateTime.tryParse(project['created_at'] ?? '') ?? DateTime.now(),
-      deadline: project['deadline'] != null ? DateTime.tryParse(project['deadline']) : null,
-      applicantCount: project['applicant_count'],
+      id: parsedId,
+      title: json['title']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+      budget: json['budget']?.toString() ?? '0',
+      duration: duration,
+      status: json['status']?.toString() ?? 'open',
+      category: json['category']?.toString() ?? 'General',
+      skills: parsedSkills,
+      thumbnail: json['thumbnail']?.toString(),
+      umkmId: json['client_id'] is int ? json['client_id'] : int.tryParse(json['client_id']?.toString() ?? ''),
+      umkmName: json['client_name']?.toString() ?? json['umkm_name']?.toString(),
+      umkmCity: json['client_city']?.toString(),
+      createdAt: json['created_at'] != null 
+          ? (DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now())
+          : DateTime.now(),
+      deadline: deadline,
+      applicantCount: applicantCount,
     );
   }
-
+  
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -77,8 +122,9 @@ class Project {
       'applicant_count': applicantCount,
     };
   }
-}
+} // ← HANYA SATU PENUTUP
 
+// MyProjectProgress tetap di bawah
 class MyProjectProgress {
   final int id;
   final String title;

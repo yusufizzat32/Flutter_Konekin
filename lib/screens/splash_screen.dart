@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
-
   @override
   State<SplashScreen> createState() => _SplashScreenState();
 }
@@ -25,11 +26,38 @@ class _SplashScreenState extends State<SplashScreen>
     );
     _progressController.forward();
 
-    Timer(const Duration(seconds: 3), () {
-      if (mounted) {
-        Navigator.of(context).pushReplacementNamed('/get-started');
+    // Panggil pengecekan auth & navigasi setelah delay animasi
+    _checkAuthAndNavigate();
+  }
+
+  Future<void> _checkAuthAndNavigate() async {
+    // Beri waktu animasi splash (tetap 3 detik)
+    await Future.delayed(const Duration(seconds: 3));
+
+    if (!mounted) return;
+
+    // Baca token dan userType langsung dari SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token');   // key sesuai AuthService
+    final userType = prefs.getString('user_type');
+
+    // Token valid → arahkan ke dashboard sesuai peran
+    if (token != null && token.isNotEmpty && token != 'Bearer ' &&
+        userType != null) {
+      if (!mounted) return;
+      if (userType == 'umkm') {
+        Navigator.pushReplacementNamed(context, '/umkm/dashboard');
+      } else if (userType == 'creative_worker') {
+        Navigator.pushReplacementNamed(context, '/creative/dashboard');
+      } else {
+        // fallback
+        Navigator.pushReplacementNamed(context, '/get-started');
       }
-    });
+    } else {
+      // Belum login → ke Get Started
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, '/get-started');
+    }
   }
 
   @override

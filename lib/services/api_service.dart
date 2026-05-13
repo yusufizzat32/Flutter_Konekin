@@ -1,98 +1,76 @@
 
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http_parser/http_parser.dart';
+import 'auth_service.dart';
+import 'dart:typed_data';
 
 class ApiService {
-  static const String baseUrl = 'http://127.0.0.1:8000/api';
-  
-  static const String _tokenKey = 'auth_token';
-  
-  // Singleton
+  // ---- Base URL otomatis sesuai platform --------------------------------
+  static String get _baseUrl {
+    try {
+      if (Platform.isAndroid) {
+        return 'http://10.0.2.2:8000/api'; // emulator Android
+      }
+    } catch (_) {}
+    return 'http://localhost:8000/api'; // web / desktop
+  }
+
+  // ---- Flask ML service URL ----------------------------------------------
+  static String get _flaskUrl {
+    try {
+      if (Platform.isAndroid) {
+        return 'http://10.0.2.2:5000';
+      }
+    } catch (_) {}
+    return 'http://localhost:5000';
+  }
+
+  final AuthService _auth = AuthService();
+
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
   ApiService._internal();
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // TOKEN MANAGEMENT
-  // ───────────────────────────────────────────────────────────────────────────
-  
-  Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_tokenKey);
-  }
-  
-  Future<void> setToken(String token) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tokenKey, token);
-  }
-  
-  Future<void> clearToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenKey);
-  }
-  
-  Future<bool> isLoggedIn() async {
-    final token = await getToken();
-    return token != null && token.isNotEmpty;
-  }
-  
-  Future<Map<String, String>> getAuthHeaders() async {
-    final token = await getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'Authorization': token ?? '',
-    };
-  }
+  Future<Map<String, dynamic>> _requestWithAuth(
+    Future<http.Response> Function(String token) requestFn, {
+    bool isRetry = false,
+  }) async {
+    try {
+      final token = await _auth.getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'Sesi tidak ditemukan, silakan login kembali'};
+      }
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // AUTH ENDPOINTS
-  // ───────────────────────────────────────────────────────────────────────────
-  
-  Future<Map<String, dynamic>> login(String email, String password) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email, 'password': password}),
-      ).timeout(const Duration(seconds: 30));
-      
-      final data = jsonDecode(response.body);
-      
-      if (response.statusCode == 200 && data['success'] == true) {
-        final token = data['data']['token'];
-        await setToken(token);
-        return {'success': true, 'data': data['data'], 'message': data['message']};
+      var response = await requestFn(token);
+
+      if (response.statusCode == 401 && !isRetry) {
+        final refreshResult = await _auth.refreshToken();
+        if (refreshResult['success'] == true) {
+          return await _requestWithAuth(requestFn, isRetry: true);
+        } else {
+          return {'success': false, 'message': 'Sesi berakhir, silakan login kembali'};
+        }
       }
-      
-      return {'success': false, 'message': data['message'] ?? 'Login gagal'};
-    } catch (e) {
-      return {'success': false, 'message': _handleError(e)};
-    }
-  }
-  
-  Future<Map<String, dynamic>> register(Map<String, dynamic> payload) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 30));
-      
+
       final data = jsonDecode(response.body);
-      
-      if ((response.statusCode == 200 || response.statusCode == 201) && data['success'] == true) {
-        final token = data['data']['token'];
-        await setToken(token);
-        return {'success': true, 'data': data['data'], 'message': data['message']};
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return {
+          'success': true,
+          'data': data['data'] ?? data,
+          'message': data['message'] ?? 'Success',
+        };
       }
-      
-      String errorMsg = data['message'] ?? 'Registrasi gagal';
-      if (data['errors'] != null) {
+
+      String errorMsg = data['message'] ?? 'Terjadi kesalahan';
+      if (data['errors'] != null && data['errors'] is Map) {
         final errors = data['errors'] as Map;
         if (errors.isNotEmpty) {
-          errorMsg = errors.values.first.first;
+          final firstError = errors[errors.keys.first];
+          if (firstError is List && firstError.isNotEmpty) {
+            errorMsg = firstError.first;
+          }
         }
       }
       return {'success': false, 'message': errorMsg};
@@ -100,298 +78,451 @@ class ApiService {
       return {'success': false, 'message': _handleError(e)};
     }
   }
-  
+
+  Future<Map<String, dynamic>> _multipartRequestWithAuth(
+    Future<http.MultipartRequest> Function(String token) requestBuilder, {
+    bool isRetry = false,
+  }) async {
+    try {
+      final token = await _auth.getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'Sesi tidak ditemukan. Silakan login kembali.'};
+      }
+
+      var request = await requestBuilder(token);
+      request.headers['Authorization'] = token;
+      request.headers['Accept'] = 'application/json';
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 401 && !isRetry) {
+        final refreshResult = await _auth.refreshToken();
+        if (refreshResult['success'] == true) {
+          return await _multipartRequestWithAuth(requestBuilder, isRetry: true);
+        } else {
+          await _auth.logout();
+          return {'success': false, 'message': 'Sesi berakhir, silakan login kembali'};
+        }
+      }
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return {
+          'success': true,
+          'data': data['data'] ?? data,
+          'message': data['message'] ?? 'Success',
+        };
+      }
+      return {'success': false, 'message': data['message'] ?? 'Gagal'};
+    } catch (e) {
+      return {'success': false, 'message': _handleError(e)};
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // AUTH ENDPOINTS
+  // ───────────────────────────────────────────────────────────────────────────
+  Future<Map<String, dynamic>> login(String email, String password) async {
+    return _auth.login(email, password);
+  }
+
+  Future<Map<String, dynamic>> register(Map<String, dynamic> payload) async {
+    return _auth.register(
+      type: payload['type'],
+      name: payload['name'],
+      email: payload['email'],
+      password: payload['password'],
+      passwordConfirmation: payload['password_confirmation'],
+      phone: payload['phone'],
+      city: payload['city'],
+    );
+  }
+
   Future<Map<String, dynamic>> logout() async {
-    try {
-      final headers = await getAuthHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/logout'),
-        headers: headers,
-      ).timeout(const Duration(seconds: 30));
-      
-      await clearToken();
-      final data = jsonDecode(response.body);
-      return {'success': true, 'message': data['message'] ?? 'Logout berhasil'};
-    } catch (e) {
-      await clearToken();
-      return {'success': true, 'message': 'Logout berhasil'};
-    }
-  }
-  
-  Future<Map<String, dynamic>> getProfile() async {
-    try {
-      final headers = await getAuthHeaders();
-      final response = await http.get(
-        Uri.parse('$baseUrl/profile'),
-        headers: headers,
-      ).timeout(const Duration(seconds: 30));
-      
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 && data['success'] == true) {
-        return {'success': true, 'data': data['data']};
-      }
-      return {'success': false, 'message': data['message'] ?? 'Gagal mengambil profile'};
-    } catch (e) {
-      return {'success': false, 'message': _handleError(e)};
-    }
-  }
-  
-  Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> payload) async {
-    try {
-      final headers = await getAuthHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/profile/update'),
-        headers: headers,
-        body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 30));
-      
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 && data['success'] == true) {
-        return {'success': true, 'data': data['data'], 'message': data['message']};
-      }
-      return {'success': false, 'message': data['message'] ?? 'Gagal update profile'};
-    } catch (e) {
-      return {'success': false, 'message': _handleError(e)};
-    }
+    return _auth.logout();
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // DASHBOARD ENDPOINTS
+  // DASHBOARD
   // ───────────────────────────────────────────────────────────────────────────
-  
-  Future<Map<String, dynamic>> getCreativeDashboard() async {
-    try {
-      final headers = await getAuthHeaders();
-      final response = await http.get(
-        Uri.parse('$baseUrl/creative/dashboard'),
-        headers: headers,
-      ).timeout(const Duration(seconds: 30));
-      
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 && data['success'] == true) {
-        return {'success': true, 'data': data['data']};
-      }
-      return {'success': false, 'message': data['message'] ?? 'Gagal mengambil data dashboard'};
-    } catch (e) {
-      return {'success': false, 'message': _handleError(e)};
-    }
-  }
-  
   Future<Map<String, dynamic>> getUMKMDashboard() async {
-    try {
-      final headers = await getAuthHeaders();
-      final response = await http.get(
-        Uri.parse('$baseUrl/umkm/dashboard'),
-        headers: headers,
-      ).timeout(const Duration(seconds: 30));
-      
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 && data['success'] == true) {
-        return {'success': true, 'data': data['data']};
-      }
-      return {'success': false, 'message': data['message'] ?? 'Gagal mengambil data dashboard'};
-    } catch (e) {
-      return {'success': false, 'message': _handleError(e)};
-    }
+    return _requestWithAuth((token) async {
+      return await http.get(
+        Uri.parse('$_baseUrl/umkm/dashboard'),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
+      );
+    });
+  }
+
+  Future<Map<String, dynamic>> getCreativeDashboard() async {
+    return _requestWithAuth((token) async {
+      return await http.get(
+        Uri.parse('$_baseUrl/creative/dashboard'),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
+      );
+    });
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // PROJECTS ENDPOINTS
+  // PROJECTS - UMKM
   // ───────────────────────────────────────────────────────────────────────────
-  
+  Future<Map<String, dynamic>> getUmkmProjects() async {
+    return _requestWithAuth((token) async {
+      return await http.get(
+        Uri.parse('$_baseUrl/umkm/projects'),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
+      );
+    });
+  }
+
+  Future<Map<String, dynamic>> createProject(
+    Map<String, dynamic> payload, {
+    Uint8List? imageBytes,
+  }) async {
+    return _multipartRequestWithAuth((token) async {
+      var request = http.MultipartRequest('POST', Uri.parse('$_baseUrl/umkm/projects'));
+      payload.forEach((key, value) {
+        if (value is List) {
+          request.fields[key] = jsonEncode(value);
+        } else {
+          request.fields[key] = value.toString();
+        }
+      });
+      if (imageBytes != null) {
+        request.files.add(http.MultipartFile.fromBytes(
+          'thumbnail',
+          imageBytes,
+          filename: 'upload.jpg',
+          contentType: MediaType('image', 'jpeg'),
+        ));
+      }
+      return request;
+    });
+  }
+
+  Future<Map<String, dynamic>> getProjectApplications(int projectId) async {
+    return _requestWithAuth((token) async {
+      return await http.get(
+        Uri.parse('$_baseUrl/umkm/projects/$projectId/applications'),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
+      );
+    });
+  }
+
+  Future<Map<String, dynamic>> approveApplication(int projectId, int applicationId) async {
+    return _requestWithAuth((token) async {
+      return await http.post(
+        Uri.parse('$_baseUrl/umkm/projects/$projectId/approve/$applicationId'),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
+      );
+    });
+  }
+
+  Future<Map<String, dynamic>> getUMKMProjectProgress() async {
+    return _requestWithAuth((token) async {
+      return await http.get(
+        Uri.parse('$_baseUrl/umkm/projects/progress'),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
+      );
+    });
+  }
+
+  Future<Map<String, dynamic>> deleteUmkmProject(int projectId) async {
+    return _requestWithAuth((token) async {
+      return await http.delete(
+        Uri.parse('$_baseUrl/umkm/projects/$projectId'),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
+      );
+    });
+  }
+
+  Future<Map<String, dynamic>> processPayment(int projectId) async {
+    return _requestWithAuth((token) async {
+      return await http.post(
+        Uri.parse('$_baseUrl/umkm/projects/$projectId/pay'),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
+      );
+    });
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // PROJECTS - CREATIVE
+  // ───────────────────────────────────────────────────────────────────────────
   Future<Map<String, dynamic>> getProjects({String? category, String? search}) async {
-    try {
-      final headers = await getAuthHeaders();
-      String url = '$baseUrl/projects';
-      final queryParams = <String, String>{};
-      if (category != null) queryParams['category'] = category;
-      if (search != null) queryParams['search'] = search;
-      
-      if (queryParams.isNotEmpty) {
-        url += '?${Uri(queryParameters: queryParams).query}';
-      }
-      
-      final response = await http.get(
-        Uri.parse(url),
-        headers: headers,
-      ).timeout(const Duration(seconds: 30));
-      
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 && data['success'] == true) {
-        return {'success': true, 'data': data['data']};
-      }
-      return {'success': false, 'message': data['message'] ?? 'Gagal mengambil proyek'};
-    } catch (e) {
-      return {'success': false, 'message': _handleError(e)};
+  return _requestWithAuth((token) async {
+    // BUG: category dan search tidak dipakai sama sekali!
+    String url = '$_baseUrl/projects';
+    List<String> params = [];
+    if (category != null && category.isNotEmpty && category != 'Semua') {
+      params.add('category=${Uri.encodeQueryComponent(category)}');
     }
-  }
-  
+    if (search != null && search.isNotEmpty) {
+      params.add('search=${Uri.encodeQueryComponent(search)}');
+    }
+    if (params.isNotEmpty) url += '?${params.join('&')}';
+    
+    return await http.get(
+      Uri.parse(url),
+      headers: {'Authorization': token, 'Accept': 'application/json'},
+    );
+  });
+}
+
   Future<Map<String, dynamic>> getProjectDetail(int projectId) async {
-    try {
-      final headers = await getAuthHeaders();
-      final response = await http.get(
-        Uri.parse('$baseUrl/projects/$projectId'),
-        headers: headers,
-      ).timeout(const Duration(seconds: 30));
-      
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 && data['success'] == true) {
-        return {'success': true, 'data': data['data']};
-      }
-      return {'success': false, 'message': data['message'] ?? 'Gagal mengambil detail proyek'};
-    } catch (e) {
-      return {'success': false, 'message': _handleError(e)};
-    }
+    return _requestWithAuth((token) async {
+      return await http.get(
+        Uri.parse('$_baseUrl/projects/$projectId'),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
+      );
+    });
   }
-  
-  Future<Map<String, dynamic>> applyToProject(int projectId, {String? coverLetter}) async {
-    try {
-      final headers = await getAuthHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/projects/$projectId/apply'),
-        headers: headers,
+
+  Future<Map<String, dynamic>> applyToProject(
+    int projectId, {
+    String? coverLetter,
+  }) async {
+    return _requestWithAuth((token) async {
+      return await http.post(
+        Uri.parse('$_baseUrl/projects/$projectId/apply'),
+        headers: {
+          'Authorization': token,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
         body: jsonEncode({'cover_letter': coverLetter ?? ''}),
-      ).timeout(const Duration(seconds: 30));
-      
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 && data['success'] == true) {
-        return {'success': true, 'message': data['message'] ?? 'Berhasil melamar'};
-      }
-      return {'success': false, 'message': data['message'] ?? 'Gagal melamar'};
-    } catch (e) {
-      return {'success': false, 'message': _handleError(e)};
-    }
+      );
+    });
   }
-  
+
   Future<Map<String, dynamic>> getCreativeProjects() async {
-    try {
-      final headers = await getAuthHeaders();
-      final response = await http.get(
-        Uri.parse('$baseUrl/creative/projects'),
-        headers: headers,
-      ).timeout(const Duration(seconds: 30));
-      
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 && data['success'] == true) {
-        return {'success': true, 'data': data['data']};
-      }
-      return {'success': false, 'message': data['message'] ?? 'Gagal mengambil proyek'};
-    } catch (e) {
-      return {'success': false, 'message': _handleError(e)};
-    }
+    return _requestWithAuth((token) async {
+      return await http.get(
+        Uri.parse('$_baseUrl/creative/projects'),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
+      );
+    });
   }
-  
-  Future<Map<String, dynamic>> createProject(Map<String, dynamic> payload) async {
-    try {
-      final headers = await getAuthHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/umkm/projects'),
-        headers: headers,
-        body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 30));
-      
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 && data['success'] == true) {
-        return {'success': true, 'data': data['data'], 'message': data['message']};
+
+  Future<Map<String, dynamic>> updateProjectProgressWithMedia(
+    int projectId,
+    int progress,
+    String note, {
+    File? mediaFile,
+  }) async {
+    return _multipartRequestWithAuth((token) async {
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$_baseUrl/creative/projects/$projectId/progress'),
+      );
+      request.fields['progress_percentage'] = progress.toString();
+      request.fields['note'] = note;
+      if (mediaFile != null) {
+        var stream = http.ByteStream(mediaFile.openRead());
+        var length = await mediaFile.length();
+        var multipartFile = http.MultipartFile(
+          'progress_media',
+          stream,
+          length,
+          filename: mediaFile.path.split('/').last,
+        );
+        request.files.add(multipartFile);
       }
-      return {'success': false, 'message': data['message'] ?? 'Gagal membuat proyek'};
-    } catch (e) {
-      return {'success': false, 'message': _handleError(e)};
-    }
+      return request;
+    });
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // PORTFOLIO ENDPOINTS
+  // CREATIVES / PORTFOLIO / PROFILE
   // ───────────────────────────────────────────────────────────────────────────
-  
+  Future<Map<String, dynamic>> getRecommendedCreatives() async {
+    return _requestWithAuth((token) async {
+      return await http.get(
+        Uri.parse('$_baseUrl/creative/recommended'),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
+      );
+    });
+  }
+
+  Future<Map<String, dynamic>> searchCreatives({
+    String? query,
+    String? category,
+  }) async {
+    return _requestWithAuth((token) async {
+      String url = '$_baseUrl/creative/search';
+      List<String> params = [];
+      if (query != null && query.isNotEmpty) {
+        params.add('query=${Uri.encodeQueryComponent(query)}');
+      }
+      if (category != null && category.isNotEmpty && category != 'Semua') {
+        params.add('category=${Uri.encodeQueryComponent(category)}');
+      }
+      if (params.isNotEmpty) url += '?${params.join('&')}';
+      return await http.get(
+        Uri.parse(url),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
+      );
+    });
+  }
+
+  Future<Map<String, dynamic>> getCreativeDetail(int creativeId) async {
+    return _requestWithAuth((token) async {
+      return await http.get(
+        Uri.parse('$_baseUrl/creative/profile/$creativeId'),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
+      );
+    });
+  }
+
+  Future<Map<String, dynamic>> updateProfileWithPhoto(
+    Map<String, dynamic> payload, {
+    Uint8List? photoBytes,
+  }) async {
+    return _multipartRequestWithAuth((token) async {
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$_baseUrl/profile/update'),
+      );
+      payload.forEach((key, value) {
+        if (value != null) request.fields[key] = value.toString();
+      });
+      if (photoBytes != null) {
+        request.files.add(http.MultipartFile.fromBytes(
+          'profile_photo',
+          photoBytes,
+          filename: 'profile.jpg',
+          contentType: MediaType('image', 'jpeg'),
+        ));
+      }
+      return request;
+    });
+  }
+
   Future<Map<String, dynamic>> getPortfolios() async {
-    try {
-      final headers = await getAuthHeaders();
-      final response = await http.get(
-        Uri.parse('$baseUrl/portfolios'),
-        headers: headers,
-      ).timeout(const Duration(seconds: 30));
-      
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 && data['success'] == true) {
-        return {'success': true, 'data': data['data']};
-      }
-      return {'success': false, 'message': data['message'] ?? 'Gagal mengambil portfolio'};
-    } catch (e) {
-      return {'success': false, 'message': _handleError(e)};
-    }
+    return _requestWithAuth((token) async {
+      return await http.get(
+        Uri.parse('$_baseUrl/portfolios'),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
+      );
+    });
   }
-  
+
   Future<Map<String, dynamic>> createPortfolio(Map<String, dynamic> payload) async {
-    try {
-      final headers = await getAuthHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/portfolios'),
-        headers: headers,
+    return _requestWithAuth((token) async {
+      return await http.post(
+        Uri.parse('$_baseUrl/portfolios'),
+        headers: {
+          'Authorization': token,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
         body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 30));
-      
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 && data['success'] == true) {
-        return {'success': true, 'data': data['data'], 'message': data['message']};
-      }
-      return {'success': false, 'message': data['message'] ?? 'Gagal menambah portfolio'};
-    } catch (e) {
-      return {'success': false, 'message': _handleError(e)};
-    }
+      );
+    });
   }
-  
+
   Future<Map<String, dynamic>> deletePortfolio(int portfolioId) async {
-    try {
-      final headers = await getAuthHeaders();
-      final response = await http.delete(
-        Uri.parse('$baseUrl/portfolios/$portfolioId'),
-        headers: headers,
-      ).timeout(const Duration(seconds: 30));
-      
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 && data['success'] == true) {
-        return {'success': true, 'message': data['message'] ?? 'Berhasil menghapus'};
-      }
-      return {'success': false, 'message': data['message'] ?? 'Gagal menghapus'};
-    } catch (e) {
-      return {'success': false, 'message': _handleError(e)};
-    }
+    return _requestWithAuth((token) async {
+      return await http.delete(
+        Uri.parse('$_baseUrl/portfolios/$portfolioId'),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
+      );
+    });
+  }
+
+  Future<Map<String, dynamic>> rateCreative(
+    int projectId,
+    int rating,
+    String review,
+  ) async {
+    return _requestWithAuth((token) async {
+      return await http.post(
+        Uri.parse('$_baseUrl/umkm/ratings'),
+        headers: {
+          'Authorization': token,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'project_id': projectId,
+          'rating': rating,
+          'review': review,
+        }),
+      );
+    });
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // ONBOARDING
+  // FLASK ML SERVICE
   // ───────────────────────────────────────────────────────────────────────────
+  Future<Map<String, dynamic>> checkFlaskStatus() async {
+  // Coba beberapa endpoint umum
+  final endpoints = ['/health', '/status', '/'];
   
-  Future<Map<String, dynamic>> creativeOnboarding(Map<String, dynamic> payload) async {
+  for (final endpoint in endpoints) {
     try {
-      final headers = await getAuthHeaders();
+      final response = await http.get(
+        Uri.parse('$_flaskUrl$endpoint'),
+      ).timeout(const Duration(seconds: 5));
+      
+      if (response.statusCode == 200) {
+        Map<String, dynamic> data = {};
+        try { data = jsonDecode(response.body); } catch (_) {}
+        return {
+          'connected': true,
+          'model_loaded': data['model_loaded'] ?? true,
+        };
+      }
+    } catch (_) {
+      continue;
+    }
+  }
+  return {'connected': false, 'model_loaded': false};
+}
+
+  Future<Map<String, dynamic>> getAiRecommendations(
+    Map<String, dynamic> payload,
+  ) async {
+    try {
       final response = await http.post(
-        Uri.parse('$baseUrl/creative/onboarding'),
-        headers: headers,
+        Uri.parse('$_flaskUrl/recommend'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
         body: jsonEncode(payload),
       ).timeout(const Duration(seconds: 30));
-      
+
       final data = jsonDecode(response.body);
-      if (response.statusCode == 200 && data['success'] == true) {
-        return {'success': true, 'message': data['message']};
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'data': data['recommendations'] ?? data['data'] ?? data,
+        };
       }
-      return {'success': false, 'message': data['message'] ?? 'Gagal menyimpan onboarding'};
+      return {
+        'success': false,
+        'message': data['message'] ?? 'Gagal mendapatkan rekomendasi',
+      };
     } catch (e) {
-      return {'success': false, 'message': _handleError(e)};
+      return {
+        'success': false,
+        'message': 'Koneksi ke Flask gagal: $e',
+      };
     }
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // HELPER
+  // ERROR HANDLER
   // ───────────────────────────────────────────────────────────────────────────
-  
   String _handleError(dynamic e) {
     if (e.toString().contains('SocketException')) {
       return 'Tidak ada koneksi internet';
-    } else if (e.toString().contains('TimeoutException')) {
+    }
+    if (e.toString().contains('TimeoutException')) {
       return 'Koneksi timeout. Silakan coba lagi';
-    } else if (e.toString().contains('Connection refused')) {
+    }
+    if (e.toString().contains('Connection refused')) {
       return 'Tidak dapat terhubung ke server';
     }
     return 'Terjadi kesalahan. Silakan coba lagi';
