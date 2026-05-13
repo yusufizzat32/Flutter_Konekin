@@ -1,4 +1,5 @@
 // lib/models/dashboard_model.dart
+
 class CreativeDashboardData {
   final int totalEarnings;
   final int ongoingProjects;
@@ -21,13 +22,13 @@ class CreativeDashboardData {
   });
 
   factory CreativeDashboardData.fromJson(Map<String, dynamic> json) {
-    // api_service sudah unwrap data['data'], jadi json bisa berisi:
-    // { user, stats, latest_projects } atau langsung stats di root json
     final stats = json['stats'] ?? json['statistics'] ?? json;
 
     return CreativeDashboardData(
       totalEarnings: _parseInt(stats['total_earnings']),
-      ongoingProjects: _parseInt(stats['active_projects'] ?? stats['ongoing_projects']),
+      ongoingProjects: _parseInt(
+        stats['active_projects'] ?? stats['ongoing_projects'],
+      ),
       completedProjects: _parseInt(stats['completed_projects']),
       canceledProjects: _parseInt(stats['canceled_projects']),
       profileViews: _parseInt(stats['profile_views']),
@@ -73,11 +74,26 @@ class UMKMKDashboardData {
     // { user, stats, ... } atau { total_projects, ... } langsung (fallback)
     final stats = json['stats'] ?? json['statistics'] ?? json;
 
+    // ── activeProjects: coba semua kemungkinan nama field dari backend ──────
+    // Backend Laravel biasanya kirim salah satu dari nama-nama ini.
+    // Urutan: yang paling spesifik dulu, baru fallback ke yang lebih umum.
+    final rawActive = stats['projects_in_progress'] // paling umum di controller
+        ?? stats['active_projects']
+        ?? stats['ongoing_projects']
+        ?? stats['in_progress_projects']
+        ?? stats['project_in_progress']
+        ?? stats['running_projects']
+        ?? stats['berjalan']; // jika backend pakai bahasa Indonesia
+
     return UMKMKDashboardData(
       totalProjects: _parseInt(stats['total_projects']),
-      activeProjects: _parseInt(stats['projects_in_progress'] ?? stats['active_projects']),
-      totalSpend: _parseInt(stats['total_spend']),
-      totalApplicants: _parseInt(stats['total_applications'] ?? stats['total_applicants']),
+      activeProjects: _parseInt(rawActive),
+      totalSpend: _parseInt(stats['total_spend'] ?? stats['total_budget']),
+      totalApplicants: _parseInt(
+        stats['total_applications'] ??
+            stats['total_applicants'] ??
+            stats['apply_masuk'],
+      ),
       rating: _parseDouble(stats['rating'] ?? stats['average_rating']),
     );
   }

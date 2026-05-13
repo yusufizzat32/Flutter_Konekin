@@ -1,4 +1,3 @@
-
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -448,6 +447,41 @@ class ApiService {
           'rating': rating,
           'review': review,
         }),
+      );
+    });
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // NOTIFICATIONS
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// GET /api/notifications
+  /// Response: { data: [ { id, type, data: { title, body, ... }, read_at, created_at } ] }
+  Future<Map<String, dynamic>> getNotifications() async {
+    return _requestWithAuth((token) async {
+      return await http.get(
+        Uri.parse('$_baseUrl/notifications'),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
+      );
+    });
+  }
+
+  /// POST /api/notifications/read-all  — tandai semua notifikasi sebagai dibaca
+  Future<Map<String, dynamic>> markAllNotificationsRead() async {
+    return _requestWithAuth((token) async {
+      return await http.post(
+        Uri.parse('$_baseUrl/notifications/read-all'),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
+      );
+    });
+  }
+
+  /// POST /api/notifications/{id}/read  — tandai satu notifikasi sebagai dibaca
+  Future<Map<String, dynamic>> markNotificationRead(String notifId) async {
+    return _requestWithAuth((token) async {
+      return await http.post(
+        Uri.parse('$_baseUrl/notifications/$notifId/read'),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
       );
     });
   }

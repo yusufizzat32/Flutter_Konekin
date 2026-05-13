@@ -26,14 +26,9 @@ class _ProjectProgressDetailPageState
   bool _isLoading = true;
   bool _isDeleting = false;
 
-  // ─── Stepper steps ─────────────────────────────────────────────────────────
-  // 0: Pilih Worker  1: Draft 100%  2: Bayar Escrow  3: Review Hasil  4: Admin Release
   static const List<Map<String, String>> _steps = [
     {'label': 'PILIH WORKER', 'sub': 'Review pelamar'},
     {'label': 'DRAFT 100%', 'sub': 'Tunggu progress'},
-    {'label': 'BAYAR ESCROW', 'sub': 'VA + bukti'},
-    {'label': 'REVIEW HASIL', 'sub': 'Approve/revisi'},
-    {'label': 'ADMIN RELEASE', 'sub': 'Cair/refund'},
   ];
 
   @override
@@ -92,8 +87,6 @@ class _ProjectProgressDetailPageState
     if (mounted) setState(() => _isLoading = false);
   }
 
-  // ─── Computed props ─────────────────────────────────────────────────────────
-
   String get _currentStatus =>
       _projectData?['status']?.toString() ?? widget.project.status;
 
@@ -110,12 +103,13 @@ class _ProjectProgressDetailPageState
 
   bool get _isCompleted =>
       _currentStatus == 'completed' || _currentStatus == 'done';
-  bool get _isOpen => _currentStatus == 'open' || _currentStatus == 'pending' || _currentStatus == 'published';
+  bool get _isOpen => _currentStatus == 'open' ||
+      _currentStatus == 'pending' ||
+      _currentStatus == 'published';
   bool get _isHired => _currentStatus == 'hired';
   bool get _isInProgress =>
       _currentStatus == 'in_progress' || _currentStatus == 'ongoing';
 
-  /// 0-based index step aktif
   int get _activeStep {
     switch (_currentStatus) {
       case 'open':
@@ -200,11 +194,7 @@ class _ProjectProgressDetailPageState
     }
   }
 
-  // ─── Actions ────────────────────────────────────────────────────────────────
-
-  // ── FIX: ambil ID yang valid — prioritaskan dari _projectData (fresh dari server) ──
   int get _resolvedProjectId {
-    // 1. dari data server yang sudah di-load
     final fromServer = _projectData?['id'];
     if (fromServer != null) {
       final parsed = fromServer is int
@@ -212,7 +202,6 @@ class _ProjectProgressDetailPageState
           : int.tryParse(fromServer.toString()) ?? 0;
       if (parsed > 0) return parsed;
     }
-    // 2. dari widget (bisa saja 0 kalau parse JSON gagal)
     return widget.project.id;
   }
 
@@ -249,7 +238,6 @@ class _ProjectProgressDetailPageState
 
     if (confirmed != true) return;
 
-    // ── FIX: guard — jangan hapus kalau ID masih 0 ──────────────────────────
     final projectId = _resolvedProjectId;
     if (projectId <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -289,12 +277,10 @@ class _ProjectProgressDetailPageState
     );
   }
 
-  // ─── Build ──────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F4F6),
+      backgroundColor: const Color(0xFFF5F6FA),
       appBar: AppBar(
         title: Text(
           'Progress Proyek',
@@ -347,36 +333,26 @@ class _ProjectProgressDetailPageState
                 physics: const AlwaysScrollableScrollPhysics(),
                 child: Column(
                   children: [
-                    // ── Header putih ────────────────────────────────────────
                     _buildHeaderSection(),
-
                     const SizedBox(height: 12),
-
-                    // ── Stepper ─────────────────────────────────────────────
                     _buildStepperSection(),
-
                     const SizedBox(height: 12),
-
-                    // ── Progress + Aksi Berikutnya + Ringkasan Dana ─────────
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Column(
                         children: [
-                          // Kolom kiri: progress + aksi + ringkasan
-                          Expanded(flex: 2, child: _buildLeftColumn()),
-                          const SizedBox(width: 12),
-                          // Kolom kanan: pelamar
-                          Expanded(flex: 3, child: _buildApplicantsSection()),
+                          _buildProgressCard(),
+                          const SizedBox(height: 10),
+                          _buildNextActionCard(),
+                          const SizedBox(height: 10),
+                          _buildDanaSummaryCard(),
+                          const SizedBox(height: 10),
+                          _buildApplicantsSection(),
+                          const SizedBox(height: 10),
+                          _buildProgressUpdatesSection(),
                         ],
                       ),
                     ),
-
-                    const SizedBox(height: 12),
-
-                    // ── Timeline progress update ────────────────────────────
-                    _buildProgressUpdatesSection(),
-
                     const SizedBox(height: 24),
                   ],
                 ),
@@ -385,144 +361,42 @@ class _ProjectProgressDetailPageState
     );
   }
 
-  // ─── Header ─────────────────────────────────────────────────────────────────
+  Widget _buildStepperSection() {
+    final step0Done = _currentStatus != 'open' &&
+        _currentStatus != 'pending' &&
+        _currentStatus != 'published';
+    final step0Active = _isOpen;
+    final step1Done = _currentProgress >= 100;
+    final step1Active = step0Done && !step1Done;
 
-  Widget _buildHeaderSection() {
     return Container(
       color: Colors.white,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Thumbnail
-          if (widget.project.thumbnail != null &&
-              widget.project.thumbnail!.isNotEmpty)
-            Image.network(
-              widget.project.thumbnail!,
-              width: double.infinity,
-              height: 180,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                height: 180,
-                color: const Color(0xFFEAE7ED),
-                child: const Icon(Icons.image_outlined,
-                    size: 48, color: Color(0xFF424750)),
-              ),
-            )
-          else
-            Container(
-              height: 180,
-              color: const Color(0xFF1A4B84),
-              child: const Center(
-                child: Icon(Icons.work_outline, size: 64, color: Colors.white38),
-              ),
-            ),
-
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Badges
-                Row(
-                  children: [
-                    _badge(widget.project.category.toUpperCase(),
-                        const Color(0xFF1A4B84)),
-                    const SizedBox(width: 8),
-                    if (_isOpen) _badge('BELUM ADA APPLY', const Color(0xFF424750)),
-                    if (_isHired || _isInProgress)
-                      _badge('${_applicants.length} APPLY', const Color(0xFF006D77)),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  widget.project.title,
-                  style: GoogleFonts.plusJakartaSans(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 20,
-                      color: const Color(0xFF1B1B1F)),
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 16,
-                  runSpacing: 4,
-                  children: [
-                    Row(mainAxisSize: MainAxisSize.min, children: [
-                      const Icon(Icons.calendar_today,
-                          size: 12, color: Color(0xFF424750)),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Deadline ${_formatDate(widget.project.deadline?.toIso8601String())}',
-                        style: GoogleFonts.inter(
-                            fontSize: 12, color: const Color(0xFF424750)),
-                      ),
-                    ]),
-                    Row(mainAxisSize: MainAxisSize.min, children: [
-                      const Icon(Icons.account_balance_wallet_outlined,
-                          size: 12, color: Color(0xFF006D77)),
-                      const SizedBox(width: 4),
-                      Text(
-                        widget.project.budget,
-                        style: GoogleFonts.inter(
-                            fontSize: 12,
-                            color: const Color(0xFF006D77),
-                            fontWeight: FontWeight.w600),
-                      ),
-                    ]),
-                    if (_approvedApplicant != null)
-                      Row(mainAxisSize: MainAxisSize.min, children: [
-                        const Icon(Icons.person_outline,
-                            size: 12, color: Color(0xFF1A4B84)),
-                        const SizedBox(width: 4),
-                        Text(
-                          _approvedApplicant!['creative_name']?.toString() ?? '',
-                          style: GoogleFonts.inter(
-                              fontSize: 12, color: const Color(0xFF1A4B84)),
-                        ),
-                      ]),
-                  ],
-                ),
-              ],
+          _stepItem(
+            number: 1,
+            label: _steps[0]['label']!,
+            sub: _steps[0]['sub']!,
+            isDone: step0Done,
+            isActive: step0Active,
+          ),
+          Expanded(
+            child: Container(
+              height: 2,
+              margin: const EdgeInsets.only(bottom: 20),
+              color: step0Done ? const Color(0xFF006D77) : const Color(0xFFE0E0E0),
             ),
           ),
+          _stepItem(
+            number: 2,
+            label: _steps[1]['label']!,
+            sub: _steps[1]['sub']!,
+            isDone: step1Done,
+            isActive: step1Active,
+          ),
         ],
-      ),
-    );
-  }
-
-  // ─── Stepper ────────────────────────────────────────────────────────────────
-
-  Widget _buildStepperSection() {
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: List.generate(_steps.length, (i) {
-            final isDone = i < _activeStep;
-            final isActive = i == _activeStep;
-            return Row(
-              children: [
-                _stepItem(
-                  number: i + 1,
-                  label: _steps[i]['label']!,
-                  sub: _steps[i]['sub']!,
-                  isDone: isDone,
-                  isActive: isActive,
-                ),
-                if (i < _steps.length - 1)
-                  Container(
-                    width: 20,
-                    height: 2,
-                    color: isDone
-                        ? const Color(0xFF006D77)
-                        : const Color(0xFFE0E0E0),
-                    margin: const EdgeInsets.only(bottom: 16),
-                  ),
-              ],
-            );
-          }),
-        ),
       ),
     );
   }
@@ -534,36 +408,45 @@ class _ProjectProgressDetailPageState
     required bool isDone,
     required bool isActive,
   }) {
-    Color bg;
+    Color circleBg;
     Color textColor;
     Widget numberWidget;
 
     if (isDone) {
-      bg = const Color(0xFF006D77);
+      circleBg = const Color(0xFF006D77);
       textColor = const Color(0xFF006D77);
       numberWidget = const Icon(Icons.check, size: 14, color: Colors.white);
     } else if (isActive) {
-      bg = const Color(0xFF1A4B84);
+      circleBg = const Color(0xFF1A4B84);
       textColor = const Color(0xFF1A4B84);
       numberWidget = Text('$number',
           style: GoogleFonts.inter(
               fontWeight: FontWeight.w700, fontSize: 12, color: Colors.white));
     } else {
-      bg = const Color(0xFFE0E0E0);
+      circleBg = const Color(0xFFE0E0E0);
       textColor = const Color(0xFF9E9E9E);
       numberWidget = Text('$number',
           style: GoogleFonts.inter(
               fontWeight: FontWeight.w700, fontSize: 12, color: Colors.white));
     }
 
-    return SizedBox(
-      width: 80,
+    return Container(
+      width: 90,
+      padding: isActive
+          ? const EdgeInsets.symmetric(horizontal: 8, vertical: 8)
+          : const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: isActive
+          ? BoxDecoration(
+              border: Border.all(color: const Color(0xFF1A4B84), width: 1.5),
+              borderRadius: BorderRadius.circular(10),
+            )
+          : null,
       child: Column(
         children: [
           Container(
             width: 32,
             height: 32,
-            decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+            decoration: BoxDecoration(color: circleBg, shape: BoxShape.circle),
             child: Center(child: numberWidget),
           ),
           const SizedBox(height: 5),
@@ -586,20 +469,131 @@ class _ProjectProgressDetailPageState
     );
   }
 
-  // ─── Left Column ─────────────────────────────────────────────────────────────
-
-  Widget _buildLeftColumn() {
-    return Column(
-      children: [
-        // Progress
-        _buildProgressCard(),
-        const SizedBox(height: 10),
-        // Aksi Berikutnya
-        _buildNextActionCard(),
-        const SizedBox(height: 10),
-        // Ringkasan Dana
-        _buildDanaSummaryCard(),
-      ],
+  Widget _buildHeaderSection() {
+    return Container(
+      color: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (widget.project.thumbnail != null && widget.project.thumbnail!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  widget.project.thumbnail!,
+                  height: 180,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 180,
+                    color: const Color(0xFFEAE7ED),
+                    child: const Icon(Icons.image_outlined,
+                        size: 48, color: Color(0xFF424750)),
+                  ),
+                ),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  height: 180,
+                  width: double.infinity,
+                  color: const Color(0xFF1A4B84),
+                  child: const Center(
+                    child: Icon(Icons.work_outline, size: 64, color: Colors.white38),
+                  ),
+                ),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    _badge(widget.project.category.toUpperCase(),
+                        const Color(0xFF1A4B84)),
+                    const SizedBox(width: 6),
+                    if (_isOpen)
+                      _badge('BELUM ADA APPLY', const Color(0xFF424750)),
+                    if (_isOpen) ...[
+                      const SizedBox(width: 6),
+                      _badge('0 APPLY', const Color(0xFF424750)),
+                    ],
+                    if (_isHired || _isInProgress)
+                      _badge('${_applicants.length} APPLY', const Color(0xFF006D77)),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  widget.project.title,
+                  style: GoogleFonts.plusJakartaSans(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 20,
+                      color: const Color(0xFF1B1B1F)),
+                ),
+                const SizedBox(height: 6),
+                if (widget.project.description != null &&
+                    widget.project.description!.isNotEmpty)
+                  Text(
+                    widget.project.description!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: const Color(0xFF424750),
+                        height: 1.4),
+                  ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 4,
+                  children: [
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.calendar_today_outlined,
+                          size: 13, color: Color(0xFF424750)),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Deadline ${_formatDate(widget.project.deadline?.toIso8601String())}',
+                        style: GoogleFonts.inter(
+                            fontSize: 12, color: const Color(0xFF424750)),
+                      ),
+                    ]),
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.account_balance_wallet_outlined,
+                          size: 13, color: Color(0xFF006D77)),
+                      const SizedBox(width: 4),
+                      Text(
+                        widget.project.budget,
+                        style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: const Color(0xFF006D77),
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ]),
+                    if (_approvedApplicant != null)
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        const Icon(Icons.person_outline,
+                            size: 13, color: Color(0xFF1A4B84)),
+                        const SizedBox(width: 4),
+                        Text(
+                          _approvedApplicant!['creative_name']?.toString() ?? '',
+                          style: GoogleFonts.inter(
+                              fontSize: 12, color: const Color(0xFF1A4B84)),
+                        ),
+                      ]),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -616,14 +610,14 @@ class _ProjectProgressDetailPageState
             children: [
               Text('PROGRESS',
                   style: GoogleFonts.inter(
-                      fontSize: 10,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF424750),
-                      letterSpacing: 0.5)),
+                      letterSpacing: 1.0)),
               Text(
                 '$pct%',
                 style: GoogleFonts.plusJakartaSans(
-                    fontSize: 24,
+                    fontSize: 28,
                     fontWeight: FontWeight.w800,
                     color: pct >= 100
                         ? const Color(0xFF006D77)
@@ -674,10 +668,10 @@ class _ProjectProgressDetailPageState
         children: [
           Text('AKSI BERIKUTNYA',
               style: GoogleFonts.inter(
-                  fontSize: 10,
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF006D77),
-                  letterSpacing: 0.5)),
+                  letterSpacing: 1.0)),
           const SizedBox(height: 6),
           Text(
             _nextActionTitle,
@@ -702,13 +696,14 @@ class _ProjectProgressDetailPageState
               child: ElevatedButton(
                 onPressed: _isDeleting ? null : _handleDeleteProject,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFE29578),
+                  backgroundColor: const Color(0xFFE85D04),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
+                      borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
                   textStyle:
-                      GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 11),
+                      GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 13),
                 ),
                 child: _isDeleting
                     ? const SizedBox(
@@ -733,11 +728,12 @@ class _ProjectProgressDetailPageState
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF1A4B84),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
+                      borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
                   textStyle:
-                      GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 11),
+                      GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 13),
                 ),
                 child: const Text('PILIH KREATOR'),
               ),
@@ -747,20 +743,20 @@ class _ProjectProgressDetailPageState
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
-                  // TODO: navigate to payment page
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                     content: Text('Halaman pembayaran akan segera hadir'),
                     behavior: SnackBarBehavior.floating,
                   ));
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFE29578),
+                  backgroundColor: const Color(0xFFE85D04),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
+                      borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
                   textStyle:
-                      GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 11),
+                      GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 13),
                 ),
                 child: const Text('LIHAT VERIFIKASI BUKTI'),
               ),
@@ -773,11 +769,12 @@ class _ProjectProgressDetailPageState
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF006D77),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
+                      borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
                   textStyle:
-                      GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 11),
+                      GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 13),
                 ),
                 child: const Text('BERI RATING'),
               ),
@@ -787,6 +784,7 @@ class _ProjectProgressDetailPageState
     );
   }
 
+  // ==================== RINGKASAN DANA (tanpa subjudul tambahan) ====================
   Widget _buildDanaSummaryCard() {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -794,23 +792,26 @@ class _ProjectProgressDetailPageState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('RINGKASAN DANA',
-              style: GoogleFonts.inter(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF424750),
-                  letterSpacing: 0.5)),
-          const SizedBox(height: 10),
+          Text(
+            'RINGKASAN DANA',
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF424750),
+              letterSpacing: 1.0,
+            ),
+          ),
+          const SizedBox(height: 12),
           _danaRow('Budget', widget.project.budget, isHighlight: true),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           _danaRow(
             'Escrow',
             _escrowStatus,
             valueColor: _escrowStatus == 'PAID'
                 ? const Color(0xFF006D77)
-                : Colors.red,
+                : const Color(0xFFE29578),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           _danaRow('Pelamar', '${_applicants.length}'),
         ],
       ),
@@ -819,29 +820,50 @@ class _ProjectProgressDetailPageState
 
   Widget _danaRow(String label, String value,
       {bool isHighlight = false, Color? valueColor}) {
+    final bool isBadge = value == 'UNPAID' || value == 'PAID';
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label,
-            style: GoogleFonts.inter(
-                fontSize: 12, color: const Color(0xFF424750))),
         Text(
-          value,
+          label,
           style: GoogleFonts.inter(
-            fontSize: 12,
-            fontWeight: isHighlight ? FontWeight.w700 : FontWeight.w500,
-            color: valueColor ??
-                (isHighlight
-                    ? const Color(0xFF1B1B1F)
-                    : const Color(0xFF424750)),
+            fontSize: 13,
+            color: const Color(0xFF424750),
           ),
         ),
+        if (isBadge)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+            decoration: BoxDecoration(
+              color: (valueColor ?? const Color(0xFFE29578)).withOpacity(0.12),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              value,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: valueColor ?? const Color(0xFFE29578),
+              ),
+            ),
+          )
+        else
+          Text(
+            value,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: isHighlight ? FontWeight.w700 : FontWeight.w500,
+              color: valueColor ??
+                  (isHighlight
+                      ? const Color(0xFF1B1B1F)
+                      : const Color(0xFF424750)),
+            ),
+          ),
       ],
     );
   }
 
-  // ─── Applicants Section ──────────────────────────────────────────────────────
-
+  // ==================== PELAMAR ====================
   Widget _buildApplicantsSection() {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -852,85 +874,116 @@ class _ProjectProgressDetailPageState
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('PELAMAR',
-                  style: GoogleFonts.inter(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF424750),
-                      letterSpacing: 0.5)),
+              Text(
+                'PELAMAR',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF424750),
+                  letterSpacing: 1.0,
+                ),
+              ),
               GestureDetector(
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) =>
-                        ProjectApplicantsPage(project: widget.project),
+                    builder: (_) => ProjectApplicantsPage(project: widget.project),
                   ),
                 ).then((_) => _loadDetail()),
-                child: Text('Lihat Detail',
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A4B84).withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Lihat Detail',
                     style: GoogleFonts.inter(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF1A4B84))),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF1A4B84),
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          Text('Proposal Creative Worker',
-              style: GoogleFonts.plusJakartaSans(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                  color: const Color(0xFF1B1B1F))),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
+          Text(
+            'Proposal Creative Worker',
+            style: GoogleFonts.plusJakartaSans(
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+              color: const Color(0xFF1B1B1F),
+            ),
+          ),
+          const SizedBox(height: 12),
 
           if (_applicants.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF5F3F7),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Column(
-                children: [
-                  Icon(Icons.person_search_outlined,
-                      size: 36,
-                      color: const Color(0xFF424750).withOpacity(0.3)),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Belum ada apply masuk',
-                    style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF424750)),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Proposal creative worker akan muncul di sini setelah mereka apply.',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(
-                        fontSize: 10,
-                        color: const Color(0xFF424750).withOpacity(0.6)),
-                  ),
-                ],
-              ),
-            )
+            _buildEmptyApplicantState()
           else
-            ...List.generate(
-              _applicants.length > 3 ? 3 : _applicants.length,
-              (i) => _applicantTile(_applicants[i]),
+            Column(
+              children: [
+                ...List.generate(
+                  _applicants.length > 3 ? 3 : _applicants.length,
+                  (i) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _applicantTile(_applicants[i]),
+                  ),
+                ),
+                if (_applicants.length > 3)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Center(
+                      child: Text(
+                        '+${_applicants.length - 3} lainnya',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: const Color(0xFF1A4B84),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
+        ],
+      ),
+    );
+  }
 
-          if (_applicants.length > 3) ...[
-            const SizedBox(height: 8),
-            Center(
-              child: Text(
-                '+${_applicants.length - 3} lainnya',
-                style: GoogleFonts.inter(
-                    fontSize: 11,
-                    color: const Color(0xFF1A4B84),
-                    fontWeight: FontWeight.w600),
-              ),
+  Widget _buildEmptyApplicantState() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F3F7),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        children: [
+          Icon(
+            Icons.person_search_outlined,
+            size: 36,
+            color: const Color(0xFF424750).withOpacity(0.3),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Belum ada apply masuk',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF424750),
             ),
-          ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Proposal creative worker akan muncul di sini setelah mereka apply.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 10,
+              color: const Color(0xFF424750).withOpacity(0.6),
+            ),
+          ),
         ],
       ),
     );
@@ -945,7 +998,6 @@ class _ProjectProgressDetailPageState
     final isApproved = status == 'approved';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: isApproved
@@ -959,8 +1011,8 @@ class _ProjectProgressDetailPageState
         ),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Avatar
           Container(
             width: 36,
             height: 36,
@@ -991,11 +1043,18 @@ class _ProjectProgressDetailPageState
               children: [
                 Row(
                   children: [
-                    Text(name,
+                    Expanded(
+                      child: Text(
+                        name,
                         style: GoogleFonts.inter(
-                            fontWeight: FontWeight.w700, fontSize: 12)),
-                    const Spacer(),
-                    if (isApproved)
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (isApproved) ...[
+                      const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
@@ -1003,26 +1062,37 @@ class _ProjectProgressDetailPageState
                           color: const Color(0xFF006D77).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Text('APPROVED',
-                            style: GoogleFonts.inter(
-                                fontSize: 8,
-                                fontWeight: FontWeight.w700,
-                                color: const Color(0xFF006D77))),
+                        child: Text(
+                          'APPROVED',
+                          style: GoogleFonts.inter(
+                            fontSize: 8,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF006D77),
+                          ),
+                        ),
                       ),
+                    ],
                   ],
                 ),
-                if (city.isNotEmpty)
-                  Text(city,
-                      style: GoogleFonts.inter(
-                          fontSize: 10, color: const Color(0xFF424750))),
+                if (city.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    city,
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      color: const Color(0xFF424750),
+                    ),
+                  ),
+                ],
                 if (message.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text(
                     message,
                     style: GoogleFonts.inter(
-                        fontSize: 11,
-                        color: const Color(0xFF424750),
-                        height: 1.3),
+                      fontSize: 11,
+                      color: const Color(0xFF424750),
+                      height: 1.3,
+                    ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -1035,12 +1105,9 @@ class _ProjectProgressDetailPageState
     );
   }
 
-  // ─── Progress Timeline ───────────────────────────────────────────────────────
-
+  // ==================== RIWAYAT UPDATE PROGRESS ====================
   Widget _buildProgressUpdatesSection() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Container(
+    return Container(
         padding: const EdgeInsets.all(14),
         decoration: _cardDecoration(),
         child: Column(
@@ -1048,10 +1115,10 @@ class _ProjectProgressDetailPageState
           children: [
             Text('RIWAYAT',
                 style: GoogleFonts.inter(
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF424750),
-                    letterSpacing: 0.5)),
+                    letterSpacing: 1.0)),
             const SizedBox(height: 4),
             Text('Update Progress',
                 style: GoogleFonts.plusJakartaSans(
@@ -1098,7 +1165,6 @@ class _ProjectProgressDetailPageState
               ),
           ],
         ),
-      ),
     );
   }
 
@@ -1208,8 +1274,6 @@ class _ProjectProgressDetailPageState
     );
   }
 
-  // ─── Helpers ────────────────────────────────────────────────────────────────
-
   Widget _badge(String text, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -1227,11 +1291,11 @@ class _ProjectProgressDetailPageState
 
   BoxDecoration _cardDecoration() => BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
             offset: const Offset(0, 2),
           ),
         ],
