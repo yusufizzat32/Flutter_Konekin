@@ -33,7 +33,7 @@ class _CreativeDetailPageState extends State<CreativeDetailPage> {
     });
 
     final result =
-        await _api.getCreativeDetail(int.tryParse(widget.creativeId) ?? 0);
+        await _api.getCreativeDetail(widget.creativeId);
 
     if (mounted) {
       if (result['success'] == true && result['data'] != null) {

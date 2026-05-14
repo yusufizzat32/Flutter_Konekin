@@ -194,15 +194,13 @@ class _ProjectProgressDetailPageState
     }
   }
 
-  int get _resolvedProjectId {
+  String get _resolvedProjectId {
+    if (widget.project.id.isNotEmpty) return widget.project.id;
     final fromServer = _projectData?['id'];
-    if (fromServer != null) {
-      final parsed = fromServer is int
-          ? fromServer
-          : int.tryParse(fromServer.toString()) ?? 0;
-      if (parsed > 0) return parsed;
+    if (fromServer != null && fromServer.toString().isNotEmpty) {
+      return fromServer.toString();
     }
-    return widget.project.id;
+    return '';
   }
 
   Future<void> _handleDeleteProject() async {
@@ -239,7 +237,7 @@ class _ProjectProgressDetailPageState
     if (confirmed != true) return;
 
     final projectId = _resolvedProjectId;
-    if (projectId <= 0) {
+    if (projectId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Gagal: ID proyek tidak valid. Coba refresh halaman.'),
         backgroundColor: Colors.red,

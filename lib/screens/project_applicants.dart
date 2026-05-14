@@ -17,7 +17,7 @@ class _ProjectApplicantsPageState extends State<ProjectApplicantsPage> {
   List<Map<String, dynamic>> _applicants = [];
   bool _isLoading = true;
   bool _isApproving = false;
-  int? _approvingId;
+  String? _approvingId;
 
   @override
   void initState() {
@@ -48,7 +48,7 @@ class _ProjectApplicantsPageState extends State<ProjectApplicantsPage> {
     }
   }
 
-  Future<void> _approveApplicant(int applicationId, String creativeName) async {
+  Future<void> _approveApplicant(String applicationId, String creativeName) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -397,7 +397,7 @@ class _ProjectApplicantsPageState extends State<ProjectApplicantsPage> {
                   child: ElevatedButton.icon(
                     onPressed: (_isApproving && isApprovingThis) 
                         ? null 
-                        : () => _approveApplicant(int.tryParse(id) ?? 0, name),
+                        : () => _approveApplicant(id, name),
                     icon: isApprovingThis
                         ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                         : const Icon(Icons.check_circle_outline, size: 16),

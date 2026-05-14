@@ -173,17 +173,12 @@ class _CreateProjectPageState extends State<CreateProjectPage> {
           createdProject = result['data'] as Map<String, dynamic>;
         }
 
-        int newProjectId = 0;
+        String newProjectId = '';
         if (createdProject != null && createdProject['id'] != null) {
-          final idValue = createdProject['id'];
-          if (idValue is int) {
-            newProjectId = idValue;
-          } else if (idValue is String) {
-            newProjectId = int.tryParse(idValue) ?? 0;
-          }
+          newProjectId = createdProject['id'].toString();
         }
 
-        if (newProjectId > 0) {
+        if (newProjectId.isNotEmpty) {
           // Buat objek Project sederhana untuk navigasi
           final newProject = Project(
             id: newProjectId,

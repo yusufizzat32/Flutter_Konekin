@@ -6,7 +6,7 @@ import '../models/project_model.dart';
 /// [isOwner] = true  → tampilkan tab Info + Pelamar (dipakai dari dashboard/proyek UMKM)
 /// [isOwner] = false → tampilkan tombol Lamar (default, dipakai dari explore creative)
 class ProjectDetailPage extends StatefulWidget {
-  final int projectId;
+  final String projectId;
   final bool isOwner;
 
   const ProjectDetailPage({
@@ -33,7 +33,7 @@ class _ProjectDetailPageState extends State<ProjectDetailPage>
   List<Map<String, dynamic>> _applicants = [];
   bool _isLoadingApplicants = false;
   bool _isApproving = false;
-  int? _approvingId;
+  String? _approvingId;
 
   @override
   void initState() {
@@ -129,7 +129,7 @@ class _ProjectDetailPageState extends State<ProjectDetailPage>
     );
   }
 
-  Future<void> _approveApplicant(int applicationId, String creativeName) async {
+  Future<void> _approveApplicant(String applicationId, String creativeName) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -645,7 +645,7 @@ class _ProjectDetailPageState extends State<ProjectDetailPage>
                   child: ElevatedButton.icon(
                     onPressed: (_isApproving && isApprovingThis)
                         ? null
-                        : () => _approveApplicant(int.tryParse(id) ?? 0, name),
+                        : () => _approveApplicant(id, name),
                     icon: isApprovingThis
                         ? const SizedBox(
                             width: 16,

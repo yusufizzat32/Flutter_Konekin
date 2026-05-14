@@ -200,7 +200,7 @@ class ApiService {
     });
   }
 
-  Future<Map<String, dynamic>> getProjectApplications(int projectId) async {
+  Future<Map<String, dynamic>> getProjectApplications(String projectId) async {
     return _requestWithAuth((token) async {
       return await http.get(
         Uri.parse('$_baseUrl/umkm/projects/$projectId/applications'),
@@ -209,7 +209,7 @@ class ApiService {
     });
   }
 
-  Future<Map<String, dynamic>> approveApplication(int projectId, int applicationId) async {
+  Future<Map<String, dynamic>> approveApplication(String projectId, String applicationId) async {
     return _requestWithAuth((token) async {
       return await http.post(
         Uri.parse('$_baseUrl/umkm/projects/$projectId/approve/$applicationId'),
@@ -227,7 +227,7 @@ class ApiService {
     });
   }
 
-  Future<Map<String, dynamic>> deleteUmkmProject(int projectId) async {
+  Future<Map<String, dynamic>> deleteUmkmProject(String projectId) async {
     return _requestWithAuth((token) async {
       return await http.delete(
         Uri.parse('$_baseUrl/umkm/projects/$projectId'),
@@ -236,7 +236,7 @@ class ApiService {
     });
   }
 
-  Future<Map<String, dynamic>> processPayment(int projectId) async {
+  Future<Map<String, dynamic>> processPayment(String projectId) async {
     return _requestWithAuth((token) async {
       return await http.post(
         Uri.parse('$_baseUrl/umkm/projects/$projectId/pay'),
@@ -268,7 +268,7 @@ class ApiService {
   });
 }
 
-  Future<Map<String, dynamic>> getProjectDetail(int projectId) async {
+  Future<Map<String, dynamic>> getProjectDetail(String projectId) async {
     return _requestWithAuth((token) async {
       return await http.get(
         Uri.parse('$_baseUrl/projects/$projectId'),
@@ -278,7 +278,7 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> applyToProject(
-    int projectId, {
+    String projectId, {
     String? coverLetter,
   }) async {
     return _requestWithAuth((token) async {
@@ -304,7 +304,7 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> updateProjectProgressWithMedia(
-    int projectId,
+    String projectId,
     int progress,
     String note, {
     File? mediaFile,
@@ -364,7 +364,7 @@ class ApiService {
     });
   }
 
-  Future<Map<String, dynamic>> getCreativeDetail(int creativeId) async {
+  Future<Map<String, dynamic>> getCreativeDetail(String creativeId) async {
     return _requestWithAuth((token) async {
       return await http.get(
         Uri.parse('$_baseUrl/creative/profile/$creativeId'),
@@ -430,7 +430,7 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> rateCreative(
-    int projectId,
+    String projectId,
     int rating,
     String review,
   ) async {

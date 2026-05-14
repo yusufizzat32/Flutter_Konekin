@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 
 class RatingBottomSheet extends StatefulWidget {
-  final int projectId;
+  final String projectId;
   final String projectTitle;
   final VoidCallback onRated;
 

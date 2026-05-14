@@ -57,7 +57,7 @@ class _MyProjectsUmkmPageState extends State<MyProjectsUmkmPage>
           _projects = projectsList.map((e) {
             try {
               final p = Project.fromJson(Map<String, dynamic>.from(e));
-              if (p.id == 0) {
+              if (p.id.isEmpty) {
                 // ── FIX: log raw data kalau ID masih 0 untuk debugging ──
                 debugPrint('⚠️ Project ID=0! Raw JSON keys: ${e.keys.toList()}');
                 debugPrint('⚠️ Raw: $e');

@@ -96,7 +96,7 @@ class KonekinApp extends StatelessWidget {
               ['creative_worker'],
             );
           case '/project-detail':
-            final projectId = settings.arguments as int? ?? 0;
+            final projectId = settings.arguments?.toString() ?? '';
             return _buildProtectedRoute(
               settings,
               (context) => ProjectDetailPage(projectId: projectId),
