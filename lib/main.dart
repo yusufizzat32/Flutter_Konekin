@@ -1,4 +1,4 @@
-// main.dart - Fixed Version dengan SplashScreen dan AuthGuard yang benar
+// main.dart — Updated: semua route baru terdaftar
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -15,11 +15,13 @@ import 'screens/portfolio_page.dart';
 import 'screens/edit_profile.dart';
 import 'screens/create_project.dart';
 import 'services/auth_service.dart';
-import 'screens/explore_creatives.dart';
-import 'screens/creative_detail_page.dart';
 import 'screens/my_projects_umkm.dart';
-import 'screens/profile_umkm.dart';
 import 'screens/ai_recommendation_page.dart';
+import 'screens/creative_my_projects_page.dart';
+import 'screens/creative_earnings_page.dart';
+import 'screens/escrow_payment_page.dart';
+import 'screens/approve_completion_page.dart';
+import 'models/project_model.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -65,80 +67,112 @@ class KonekinApp extends StatelessWidget {
       initialRoute: '/',
       onGenerateRoute: (settings) {
         switch (settings.name) {
+          // ── Public ──────────────────────────────────────────────────────
           case '/':
-            return _buildPageRoute(const SplashScreen(), settings);
+            return _page(const SplashScreen(), settings);
           case '/get-started':
-            return _buildPageRoute(const GetStartedScreen(), settings);
+            return _page(const GetStartedScreen(), settings);
           case '/login':
-            return _buildPageRoute(const LoginPage(), settings);
+            return _page(const LoginPage(), settings);
           case '/register/umkm':
-            return _buildPageRoute(const RegistrasiScreen(userType: UserType.umkm), settings);
+            return _page(
+                const RegistrasiScreen(userType: UserType.umkm), settings);
           case '/register/creative':
-            return _buildPageRoute(const RegistrasiScreen(userType: UserType.creativeWorker), settings);
-          
-          // Protected Routes
+            return _page(
+                const RegistrasiScreen(userType: UserType.creativeWorker),
+                settings);
+
+          // ── UMKM Protected ──────────────────────────────────────────────
           case '/umkm/dashboard':
-            return _buildProtectedRoute(
+            return _protected(settings, (_) => const UmkmDashboard(), ['umkm']);
+
+          case '/umkm/my-projects':
+            return _protected(
+                settings, (_) => const MyProjectsUmkmPage(), ['umkm']);
+
+          case '/create-project':
+            return _protected(
+                settings, (_) => const CreateProjectPage(), ['umkm']);
+
+          case '/ai-recommendation':
+            return _protected(
+                settings, (_) => const AiRecommendationPage(), ['umkm']);
+
+          // Escrow payment — menerima Project sebagai argument
+          case '/escrow-payment':
+            final project = settings.arguments as Project;
+            return _protected(
               settings,
-              (context) => const UmkmDashboard(),
+              (_) => EscrowPaymentPage(project: project),
               ['umkm'],
             );
+
+          // Approve completion — menerima Map {project, progressUpdates}
+          case '/approve-completion':
+            final args = settings.arguments as Map<String, dynamic>;
+            return _protected(
+              settings,
+              (_) => ApproveCompletionPage(
+                project: args['project'] as Project,
+                progressUpdates:
+                    args['progressUpdates'] as List<Map<String, dynamic>>,
+              ),
+              ['umkm'],
+            );
+
+          // ── Creative Protected ───────────────────────────────────────────
           case '/creative/dashboard':
-            return _buildProtectedRoute(
-              settings,
-              (context) => const CreativeDashboard(),
-              ['creative_worker'],
-            );
+            return _protected(
+                settings, (_) => const CreativeDashboard(), ['creative_worker']);
+
           case '/explore-projects':
-            return _buildProtectedRoute(
-              settings,
-              (context) => const ExploreProjectsPage(),
-              ['creative_worker'],
-            );
+            return _protected(
+                settings, (_) => const ExploreProjectsPage(), ['creative_worker']);
+
           case '/project-detail':
             final projectId = settings.arguments?.toString() ?? '';
-            return _buildProtectedRoute(
+            return _protected(
               settings,
-              (context) => ProjectDetailPage(projectId: projectId),
+              (_) => ProjectDetailPage(projectId: projectId),
               ['creative_worker'],
             );
-          case '/my-projects':
-            final userType = settings.arguments as String? ?? 'creative';
-            return _buildProtectedRoute(
+
+          // Proyek yang dikerjakan creative worker (tab baru)
+          case '/creative/my-projects':
+            return _protected(
               settings,
-              (context) => MyProjectsPage(userType: userType),
-              ['umkm', 'creative_worker'],
+              (_) => const CreativeMyProjectsPage(),
+              ['creative_worker'],
             );
-          case '/umkm/my-projects':
-            return _buildProtectedRoute(
+
+          // Pendapatan & escrow creative worker
+          case '/creative/earnings':
+            return _protected(
               settings,
-              (context) => const MyProjectsUmkmPage(),
-              ['umkm'],
+              (_) => const CreativeEarningsPage(),
+              ['creative_worker'],
             );
+
           case '/portfolio':
-            return _buildProtectedRoute(
+            return _protected(
+                settings, (_) => const PortfolioPage(), ['creative_worker']);
+
+          // ── Shared Protected ────────────────────────────────────────────
+          case '/my-projects':
+            final userType =
+                settings.arguments as String? ?? 'creative';
+            return _protected(
               settings,
-              (context) => const PortfolioPage(),
-              ['creative_worker'],
-            );
-          case '/edit-profile':
-            return _buildProtectedRoute(
-              settings,
-              (context) => const EditProfilePage(),
+              (_) => MyProjectsPage(userType: userType),
               ['umkm', 'creative_worker'],
             );
-          case '/create-project':
-            return _buildProtectedRoute(
-              settings,
-              (context) => const CreateProjectPage(),
-              ['umkm'],
-            );
-          case '/ai-recommendation':
-            return _buildProtectedRoute(
-              settings,
-              (context) => const AiRecommendationPage(),
-              ['umkm'],
-            );
+
+          case '/edit-profile':
+            return _protected(
+                settings,
+                (_) => const EditProfilePage(),
+                ['umkm', 'creative_worker']);
+
           default:
             return null;
         }
@@ -146,14 +180,12 @@ class KonekinApp extends StatelessWidget {
     );
   }
 
-  PageRoute _buildPageRoute(Widget page, RouteSettings settings) {
+  PageRoute _page(Widget page, RouteSettings settings) {
     return MaterialPageRoute(
-      settings: settings,
-      builder: (context) => page,
-    );
+        settings: settings, builder: (context) => page);
   }
 
-  PageRoute _buildProtectedRoute(
+  PageRoute _protected(
     RouteSettings settings,
     Widget Function(BuildContext) builder,
     List<String> allowedRoles,
@@ -161,72 +193,66 @@ class KonekinApp extends StatelessWidget {
     return MaterialPageRoute(
       settings: settings,
       builder: (context) => FutureBuilder<bool>(
-        future: _checkAuthAndRole(context, allowedRoles),
+        future: _checkAuth(context, allowedRoles),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
+                body: Center(child: CircularProgressIndicator()));
           }
-          if (snapshot.data == true) {
-            return builder(context);
-          }
+          if (snapshot.data == true) return builder(context);
           return const SizedBox.shrink();
         },
       ),
     );
   }
 
-  Future<bool> _checkAuthAndRole(BuildContext context, List<String> allowedRoles) async {
+  Future<bool> _checkAuth(
+      BuildContext context, List<String> allowedRoles) async {
     final authService = AuthService();
-    
-    // 1. Cek token ada
+
     final token = await authService.getToken();
     if (token == null || token.isEmpty || token == 'Bearer ') {
-      _redirectToLogin(context);
+      _toLogin(context);
       return false;
     }
-    
-    // 2. Validasi token ke server (cek expired)
+
     final isValid = await authService.validateToken();
     if (!isValid) {
-      // Coba refresh token
       final refreshResult = await authService.refreshToken();
       if (refreshResult['success'] != true) {
-        _redirectToLogin(context);
+        _toLogin(context);
         return false;
       }
     }
-    
-    // 3. Cek role
+
     final userType = await authService.getUserType();
     if (userType == null || !allowedRoles.contains(userType)) {
-      _showAccessDenied(context);
+      _denyAccess(context);
       return false;
     }
-    
+
     return true;
   }
-  
-  void _redirectToLogin(BuildContext context) {
+
+  void _toLogin(BuildContext context) {
     if (context.mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+        Navigator.pushNamedAndRemoveUntil(
+            context, '/login', (route) => false);
       });
     }
   }
-  
-  void _showAccessDenied(BuildContext context) {
+
+  void _denyAccess(BuildContext context) {
     if (context.mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Anda tidak memiliki akses ke halaman ini'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        Navigator.pushNamedAndRemoveUntil(context, '/get-started', (route) => false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Anda tidak memiliki akses ke halaman ini'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+        Navigator.pushNamedAndRemoveUntil(
+            context, '/get-started', (route) => false);
       });
     }
   }

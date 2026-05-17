@@ -33,38 +33,31 @@ class _MyProjectsUmkmPageState extends State<MyProjectsUmkmPage>
     if (!mounted) return;
     setState(() => _isLoading = true);
 
-    final result = await _api.getUmkmProjects();
-
-    debugPrint('🔍 getUmkmProjects result: $result');
+    // Pakai endpoint /umkm/projects/progress yang mengembalikan SEMUA status
+    // termasuk hired, in_progress, awaiting_payment, ready_for_review, dll.
+    final result = await _api.getUMKMProjectProgress();
 
     if (mounted) {
       setState(() {
-        if (result['success'] == true && result['data'] != null) {
-          final data = result['data'];
+        if (result['success'] == true) {
+          // _requestWithAuth sudah unwrap data['data'] → result['data']
+          // Backend return: { data: [...projects], history: [...] }
+          // Setelah unwrap: result['data'] bisa berupa List langsung
+          // atau Map dengan key 'data' / list langsung
+          final raw = result['data'];
           List<dynamic> projectsList = [];
 
-          if (data is List) {
-            projectsList = data;
-          } else if (data is Map) {
-            projectsList = (data['projects'] ??
-                            data['data'] ??
-                            data['items'] ??
-                            []) as List<dynamic>;
+          if (raw is List) {
+            projectsList = raw;
+          } else if (raw is Map) {
+            // Kadang unwrap menghasilkan Map berisi list proyek
+            final inner = raw['data'] ?? raw['projects'] ?? raw['items'];
+            if (inner is List) projectsList = inner;
           }
-
-          debugPrint('🔍 Total projects dari API: ${projectsList.length}');
 
           _projects = projectsList.map((e) {
             try {
-              final p = Project.fromJson(Map<String, dynamic>.from(e));
-              if (p.id.isEmpty) {
-                // ── FIX: log raw data kalau ID masih 0 untuk debugging ──
-                debugPrint('⚠️ Project ID=0! Raw JSON keys: ${e.keys.toList()}');
-                debugPrint('⚠️ Raw: $e');
-              } else {
-                debugPrint('✅ Project: id=${p.id}, title=${p.title}, status=${p.status}');
-              }
-              return p;
+              return Project.fromJson(Map<String, dynamic>.from(e));
             } catch (err) {
               debugPrint('❌ Error parsing project: $err | raw: $e');
               return null;
@@ -81,14 +74,8 @@ class _MyProjectsUmkmPageState extends State<MyProjectsUmkmPage>
   List<Project> get _filteredProjects {
     return _projects.where((p) {
       if (_selectedTab == 0) {
-        // TAB AKTIF: semua status yang bukan selesai/dibatalkan
-        return p.status == 'open' ||
-               p.status == 'in_progress' ||
-               p.status == 'ongoing' ||
-               p.status == 'hired' ||
-               p.status == 'pending' ||
-               p.status == 'active' ||
-               p.status == 'published';
+        // TAB AKTIF: semua status yang sedang berjalan (termasuk lewat deadline)
+        return p.status != 'completed' && p.status != 'done' && p.status != 'cancelled';
       } else {
         // TAB SELESAI
         return p.status == 'completed' || p.status == 'done';
@@ -277,11 +264,24 @@ class _ProjectCard extends StatelessWidget {
       case 'published':
       case 'active':
         return const Color(0xFF006D77);
+      case 'applied':
+        return const Color(0xFF9C27B0);
       case 'hired':
         return const Color(0xFF1A4B84);
       case 'in_progress':
       case 'ongoing':
         return const Color(0xFFE29578);
+      case 'awaiting_payment':
+      case 'payment_pending':
+        return Colors.orange;
+      case 'ready_for_review':
+        return const Color(0xFF006D77);
+      case 'pending_admin_approval':
+        return Colors.purple;
+      case 'revision':
+        return Colors.deepOrange;
+      case 'disputed':
+        return Colors.red;
       case 'completed':
       case 'done':
         return const Color(0xFF83C5BE);
@@ -299,16 +299,30 @@ class _ProjectCard extends StatelessWidget {
       case 'published':
       case 'active':
         return 'AKTIF';
+      case 'applied':
+        return 'ADA PELAMAR';
       case 'hired':
         return 'KREATOR DIPILIH';
       case 'in_progress':
       case 'ongoing':
         return 'SEDANG BERJALAN';
+      case 'awaiting_payment':
+        return 'MENUNGGU BAYAR';
+      case 'payment_pending':
+        return 'MENUNGGU TRANSFER';
+      case 'ready_for_review':
+        return 'SIAP DIREVIEW';
+      case 'pending_admin_approval':
+        return 'MENUNGGU ADMIN';
+      case 'revision':
+        return 'REVISI';
+      case 'disputed':
+        return 'DISPUTE';
       case 'completed':
       case 'done':
         return 'SELESAI';
       default:
-        return project.status.toUpperCase();
+        return project.status.toUpperCase().replaceAll('_', ' ');
     }
   }
 
@@ -326,17 +340,17 @@ class _ProjectCard extends StatelessWidget {
   }
 
   int _getProgressValue() {
-    if (project.status == 'completed' || project.status == 'done') return 100;
-    if (project.status == 'in_progress' || project.status == 'ongoing') return 65;
-    if (project.status == 'hired') return 10;
-    return 0;
+    // Gunakan nilai real dari backend, bukan hardcode
+    return project.progressPercentage;
   }
 
   @override
   Widget build(BuildContext context) {
-    final isOngoing = project.status == 'in_progress' ||
-                      project.status == 'ongoing' ||
-                      project.status == 'hired';
+    final isOngoing = project.status != 'open' &&
+                      project.status != 'applied' &&
+                      project.status != 'completed' &&
+                      project.status != 'done' &&
+                      project.status != 'cancelled';
     final statusColor = _getStatusColor();
 
     return GestureDetector(

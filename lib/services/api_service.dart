@@ -219,12 +219,36 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> getUMKMProjectProgress() async {
-    return _requestWithAuth((token) async {
-      return await http.get(
+    try {
+      final token = await _auth.getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'Sesi tidak ditemukan'};
+      }
+      final response = await http.get(
         Uri.parse('$_baseUrl/umkm/projects/progress'),
         headers: {'Authorization': token, 'Accept': 'application/json'},
       );
-    });
+      if (response.statusCode == 401) {
+        final refreshResult = await _auth.refreshToken();
+        if (refreshResult['success'] == true) return getUMKMProjectProgress();
+        return {'success': false, 'message': 'Sesi berakhir'};
+      }
+      final decoded = jsonDecode(response.body);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        // Backend return: { success, data: [...projects], history: [...], message }
+        // Kembalikan 'data' = list projects langsung (bukan nested lagi)
+        final projectsList = decoded['data'];
+        return {
+          'success': true,
+          'data': projectsList, // List<dynamic> langsung
+          'history': decoded['history'] ?? [],
+          'message': decoded['message'] ?? 'Success',
+        };
+      }
+      return {'success': false, 'message': decoded['message'] ?? 'Gagal'};
+    } catch (e) {
+      return {'success': false, 'message': _handleError(e)};
+    }
   }
 
   Future<Map<String, dynamic>> deleteUmkmProject(String projectId) async {
@@ -337,18 +361,18 @@ class ApiService {
   Future<Map<String, dynamic>> getRecommendedCreatives() async {
     return _requestWithAuth((token) async {
       return await http.get(
-        Uri.parse('$_baseUrl/creative/recommended'),
+        Uri.parse('$_baseUrl/creatives?limit=5'),
         headers: {'Authorization': token, 'Accept': 'application/json'},
       );
     });
   }
 
-  Future<Map<String, dynamic>> searchCreatives({
+   Future<Map<String, dynamic>> searchCreatives({
     String? query,
     String? category,
   }) async {
     return _requestWithAuth((token) async {
-      String url = '$_baseUrl/creative/search';
+      String url = '$_baseUrl/creatives';
       List<String> params = [];
       if (query != null && query.isNotEmpty) {
         params.add('query=${Uri.encodeQueryComponent(query)}');
@@ -577,7 +601,98 @@ class ApiService {
       return {'success': false, 'message': 'Error geocoding: $e'};
     }
   }
+ 
+  Future<Map<String, dynamic>> getUmkmProjectProgress() {
+    return getUMKMProjectProgress();
+  }
 
+  /// GET /api/creative/dashboard → parse earnings
+  Future<Map<String, dynamic>> getCreativeEarnings() async {
+    final result = await getCreativeDashboard();
+    if (result['success'] != true) return result;
+    final data = result['data'];
+    if (data is Map) {
+      final earnings = data['earnings'] ?? data['payment_summary'] ?? data;
+      return {
+        'success': true,
+        'data': earnings is Map
+            ? earnings
+            : {
+                'total_earned': data['total_earned'] ?? 0,
+                'total_pending': data['pending_payment'] ?? data['escrow_held'] ?? 0,
+                'history': data['recent_payments'] ?? data['payment_history'] ?? [],
+              },
+      };
+    }
+    return result;
+  }
+
+  /// GET /api/creative/projects → filter escrow held
+  Future<Map<String, dynamic>> getCreativeEscrow() async {
+    final result = await getCreativeProjects();
+    if (result['success'] != true) return result;
+    final raw = result['data'];
+    List<dynamic> projects = raw is List
+        ? raw
+        : (raw is Map ? (raw['projects'] ?? raw['data'] ?? []) : []);
+    final escrowList = projects.where((p) {
+      if (p is! Map) return false;
+      final status = (p['escrow_status'] ?? p['status'] ?? '').toString();
+      return ['held', 'pending', 'paid', 'in_progress',
+              'awaiting_payment', 'payment_pending'].contains(status);
+    }).map((p) {
+      final m = p as Map;
+      return {
+        'project_id':    m['id']?.toString() ?? '',
+        'project_title': m['title']?.toString() ?? '',
+        'amount':        m['budget'] ?? 0,
+        'status':        m['escrow_status'] ?? m['status'] ?? 'held',
+        'held_at':       m['created_at'],
+      };
+    }).toList();
+    return {'success': true, 'data': escrowList};
+  }
+
+  /// POST approve-completion dengan fallback ke /complete
+  Future<Map<String, dynamic>> approveCompletion(String projectId) async {
+    return _requestWithAuth((token) async {
+      final res = await http.post(
+        Uri.parse('$_baseUrl/umkm/projects/$projectId/approve-completion'),
+        headers: {'Authorization': token, 'Accept': 'application/json'},
+      );
+      if (res.statusCode == 404) {
+        return await http.post(
+          Uri.parse('$_baseUrl/umkm/projects/$projectId/complete'),
+          headers: {'Authorization': token, 'Accept': 'application/json'},
+        );
+      }
+      return res;
+    });
+  }
+
+  /// POST /api/umkm/ratings
+  Future<Map<String, dynamic>> submitRating({
+    required String projectId,
+    required int rating,
+    String comment = '',
+  }) {
+    return rateCreative(projectId, rating, comment);
+  }
+
+  /// Alias storeCreativeProgress → updateProjectProgressWithMedia
+  Future<Map<String, dynamic>> storeCreativeProgress({
+    required String projectId,
+    required int progressPercentage,
+    required String note,
+    File? mediaFile,
+  }) {
+    return updateProjectProgressWithMedia(
+      projectId,
+      progressPercentage,
+      note,
+      mediaFile: mediaFile,
+    );
+  }
   // ───────────────────────────────────────────────────────────────────────────
   // ERROR HANDLER
   // ───────────────────────────────────────────────────────────────────────────

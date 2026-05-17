@@ -39,6 +39,14 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
   bool _isLoading = true;
   bool _isLoadingCreatives = false;
 
+  // ── FIX: status proyek yang butuh pembayaran ──────────────────────────────
+  static const _paymentPendingStatuses = [
+    'hired',
+    'payment_pending',
+    'awaiting_payment',
+    'waiting_payment',
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -127,7 +135,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
 
         if (mounted) {
           setState(() {
-            _recentProjects = parsed.take(3).toList();
+            _recentProjects = parsed.take(5).toList();
           });
         }
       } catch (e) {
@@ -193,7 +201,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
     }
   }
 
-  /// Load notifications from backend: GET /api/notifications
+  // ── FIX: Load notifikasi + hitung unread dengan benar ─────────────────────
   Future<void> _loadNotifications() async {
     try {
       final result = await _api.getNotifications();
@@ -208,8 +216,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
         final notifs = list
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
-        final unread =
-            notifs.where((n) => n['read_at'] == null).length;
+        final unread = notifs.where((n) => n['read_at'] == null).length;
         if (mounted) {
           setState(() {
             _notifications = notifs;
@@ -254,6 +261,111 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
     ).then((_) => _loadAllData());
   }
 
+  // ── FIX: Navigasi ke halaman pembayaran / detail untuk proses bayar ──────
+  Future<void> _navigateToPayment(Project project) async {
+    // Tampilkan dialog konfirmasi pembayaran
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A4B84).withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.payment_rounded,
+                  color: Color(0xFF1A4B84), size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Lanjutkan Pembayaran',
+                style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                  color: const Color(0xFF1B1B1F),
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              project.title,
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+                color: const Color(0xFF1B1B1F),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const Icon(Icons.attach_money,
+                    size: 14, color: Color(0xFF006D77)),
+                Text(
+                  project.budget,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF006D77),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Kreator telah menerima tawaran Anda. Lakukan pembayaran sekarang untuk memulai proyek.',
+              style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: const Color(0xFF424750),
+                  height: 1.5),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFF424750)),
+            child: Text('Batal',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1A4B84),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            ),
+            child: Text(
+              'Bayar Sekarang',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      // Arahkan ke halaman detail proyek untuk proses pembayaran
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ProjectDetailPage(projectId: project.id),
+        ),
+      ).then((_) => _loadAllData());
+    }
+  }
+
   void _showNotificationsSheet() {
     showModalBottomSheet(
       context: context,
@@ -264,7 +376,8 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
         onMarkAllRead: () async {
           await _api.markAllNotificationsRead();
           Navigator.pop(ctx);
-          _loadNotifications();
+          await _loadNotifications();
+          if (mounted) setState(() {});
         },
       ),
     );
@@ -350,10 +463,8 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Row(
           children: [
-            // Profile photo
             _buildAvatarSmall(),
             const SizedBox(width: 10),
-            // Name & role
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -380,41 +491,8 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
                 ],
               ),
             ),
-            // Notification bell
-            Stack(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.notifications_outlined,
-                      color: Color(0xFF1A4B84), size: 22),
-                  onPressed: _showNotificationsSheet,
-                  tooltip: 'Notifikasi',
-                ),
-                if (_unreadNotifCount > 0)
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: Container(
-                      width: 16,
-                      height: 16,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFE53935),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          _unreadNotifCount > 9
-                              ? '9+'
-                              : _unreadNotifCount.toString(),
-                          style: GoogleFonts.inter(
-                              fontSize: 9,
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+            // ── FIX: Notifikasi badge dengan Stack yang benar ─────────────
+            _buildNotifBell(),
             // Logout
             IconButton(
               icon: const Icon(Icons.logout_rounded,
@@ -422,6 +500,51 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
               onPressed: _logout,
               tooltip: 'Keluar',
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── FIX: Widget notifikasi bell terpisah agar badge selalu muncul ─────────
+  Widget _buildNotifBell() {
+    return GestureDetector(
+      onTap: _showNotificationsSheet,
+      child: Container(
+        width: 44,
+        height: 44,
+        alignment: Alignment.center,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const Icon(Icons.notifications_outlined,
+                color: Color(0xFF1A4B84), size: 24),
+            if (_unreadNotifCount > 0)
+              Positioned(
+                right: -4,
+                top: -4,
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE53935),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  child: Text(
+                    _unreadNotifCount > 99
+                        ? '99+'
+                        : _unreadNotifCount.toString(),
+                    style: GoogleFonts.inter(
+                      fontSize: 9,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      height: 1.4,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -471,6 +594,8 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
           children: [
             _buildWelcomeBanner(),
             const SizedBox(height: 16),
+            // ── FIX: Banner "Lanjutkan Pembayaran" jika ada proyek payment pending ──
+            _buildPaymentPendingBanner(),
             _buildStatsGrid(),
             const SizedBox(height: 20),
             _buildQuickActions(),
@@ -485,7 +610,134 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
     );
   }
 
-  // ==================== WELCOME BANNER (menggantikan profile header) ====================
+  // ── FIX: Banner proyek yang menunggu pembayaran ───────────────────────────
+  Widget _buildPaymentPendingBanner() {
+    final paymentProjects = _recentProjects
+        .where((p) => _paymentPendingStatuses.contains(p.status))
+        .toList();
+
+    if (paymentProjects.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      children: [
+        ...paymentProjects.map((project) => _buildPaymentCard(project)),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildPaymentCard(Project project) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFFF3E0), Color(0xFFFFF8F0)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE29578).withOpacity(0.6)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFE29578).withOpacity(0.15),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE29578).withOpacity(0.15),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.payment_rounded,
+                color: Color(0xFFE29578), size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE29578).withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'MENUNGGU PEMBAYARAN',
+                        style: GoogleFonts.inter(
+                          fontSize: 8,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFFE29578),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  project.title,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: const Color(0xFF1B1B1F),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    const Icon(Icons.attach_money,
+                        size: 12, color: Color(0xFF006D77)),
+                    Text(
+                      project.budget,
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF006D77),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          // ── Tombol Lanjutkan Pembayaran ──
+          ElevatedButton(
+            onPressed: () => _navigateToPayment(project),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFE29578),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+              minimumSize: const Size(0, 36),
+            ),
+            child: Text(
+              'Bayar',
+              style: GoogleFonts.inter(
+                  fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==================== WELCOME BANNER ====================
 
   Widget _buildWelcomeBanner() {
     return Container(
@@ -509,7 +761,6 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Ikon toko kecil
           Container(
             padding: const EdgeInsets.all(7),
             decoration: BoxDecoration(
@@ -560,7 +811,6 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
   // ==================== STATS GRID ====================
 
   Widget _buildStatsGrid() {
-    // Hitung proyek berjalan dari data proyek nyata sebagai fallback
     final activeFromProjects = _recentProjects
         .where((p) =>
             p.status == 'hired' ||
@@ -691,7 +941,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
     );
   }
 
-  // ==================== QUICK ACTIONS (vertical list, sesuai desain) ====================
+  // ==================== QUICK ACTIONS ====================
 
   Widget _buildQuickActions() {
     return Column(
@@ -841,8 +1091,8 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
           children: [
             Row(
               children: [
-                Icon(Icons.auto_awesome,
-                    size: 16, color: const Color(0xFFE29578)),
+                const Icon(Icons.auto_awesome,
+                    size: 16, color: Color(0xFFE29578)),
                 const SizedBox(width: 6),
                 Text(
                   'Rekomendasi Kreator',
@@ -899,60 +1149,50 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: const Color(0xFFEAE7ED)),
             ),
-            child: Column(
-              children: [
-                Icon(Icons.people_outline,
-                    size: 36,
-                    color: const Color(0xFF424750).withOpacity(0.3)),
-                const SizedBox(height: 6),
-                Text(
-                  'Belum ada rekomendasi',
-                  style:
-                      GoogleFonts.inter(fontSize: 12, color: const Color(0xFF424750)),
-                ),
-              ],
+            child: Center(
+              child: Text(
+                'Belum ada rekomendasi kreator',
+                style: GoogleFonts.inter(
+                    fontSize: 12, color: const Color(0xFF424750)),
+              ),
             ),
           )
         else
           SizedBox(
-            height: 160,
+            height: 140,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.only(left: 2),
               itemCount: _recommendedCreatives.length,
-              itemBuilder: (context, index) {
-                final creative = _recommendedCreatives[index];
-                return _creativeCardCompact(creative);
-              },
+              itemBuilder: (_, i) =>
+                  _buildCreativeCard(_recommendedCreatives[i]),
             ),
           ),
       ],
     );
   }
 
-  Widget _creativeCardCompact(Map<String, dynamic> creative) {
-    final name = creative['name'] ?? '';
-    final role = creative['role'] ?? '';
-    final rating = creative['rating'] ?? 0.0;
-    final city = creative['city'] ?? '';
-    final photo = creative['profile_photo'] ?? '';
-    final relevanceScore = creative['relevance_score'] ?? 0.0;
+  Widget _buildCreativeCard(Map<String, dynamic> creative) {
+    final name = creative['name'] as String;
+    final role = creative['role'] as String;
+    final rating = creative['rating'] as double;
+    final city = creative['city'] as String;
+    final photo = creative['profile_photo'] as String? ?? '';
+    final relevanceScore = creative['relevance_score'] as double;
 
     return Container(
-      width: 170,
+      width: 140,
       margin: const EdgeInsets.only(right: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFEAE7ED)),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF1A4B84).withOpacity(0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
         ],
-        border:
-            Border.all(color: const Color(0xFFEAE7ED).withOpacity(0.6)),
       ),
       child: Material(
         color: Colors.transparent,
@@ -985,7 +1225,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
                           end: Alignment.bottomRight,
                         ),
                         shape: BoxShape.circle,
-                        image: (photo as String).isNotEmpty
+                        image: photo.isNotEmpty
                             ? DecorationImage(
                                 image: NetworkImage(photo),
                                 fit: BoxFit.cover)
@@ -994,9 +1234,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
                       child: photo.isEmpty
                           ? Center(
                               child: Text(
-                                name.isNotEmpty
-                                    ? name[0].toUpperCase()
-                                    : '?',
+                                name.isNotEmpty ? name[0].toUpperCase() : '?',
                                 style: GoogleFonts.inter(
                                   fontWeight: FontWeight.w700,
                                   fontSize: 13,
@@ -1036,11 +1274,10 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    Icon(Icons.star_rounded,
-                        size: 11, color: Colors.amber),
+                    const Icon(Icons.star_rounded, size: 11, color: Colors.amber),
                     const SizedBox(width: 2),
                     Text(
-                      (rating as double).toStringAsFixed(1),
+                      rating.toStringAsFixed(1),
                       style: GoogleFonts.inter(
                         fontSize: 10,
                         fontWeight: FontWeight.w600,
@@ -1048,39 +1285,36 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    Icon(Icons.location_on_outlined,
-                        size: 9,
-                        color:
-                            const Color(0xFF424750).withOpacity(0.5)),
+                    const Icon(Icons.location_on_outlined,
+                        size: 9, color: Color(0xFF424750)),
                     const SizedBox(width: 1),
                     Expanded(
                       child: Text(
                         city,
                         style: GoogleFonts.inter(
                             fontSize: 9,
-                            color: const Color(0xFF424750)
-                                .withOpacity(0.6)),
+                            color:
+                                const Color(0xFF424750).withOpacity(0.6)),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
                 ),
-                if ((relevanceScore as double) > 0) ...[
+                if (relevanceScore > 0) ...[
                   const SizedBox(height: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color:
-                          const Color(0xFF006D77).withOpacity(0.08),
+                      color: const Color(0xFF006D77).withOpacity(0.08),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.trending_up,
-                            size: 9, color: const Color(0xFF006D77)),
+                        const Icon(Icons.trending_up,
+                            size: 9, color: Color(0xFF006D77)),
                         const SizedBox(width: 3),
                         Text(
                           '${(relevanceScore * 10).toStringAsFixed(0)}% Cocok',
@@ -1105,11 +1339,10 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
   // ==================== RECENT PROJECTS ====================
 
   Widget _buildRecentProjectsSection() {
+    // Tampilkan proyek yang sedang berjalan (BUKAN yang payment_pending, sudah ada bannernya)
     final activeProjects = _recentProjects
         .where((p) =>
-            p.status == 'hired' ||
-            p.status == 'in_progress' ||
-            p.status == 'ongoing')
+            p.status == 'in_progress' || p.status == 'ongoing')
         .toList();
 
     if (activeProjects.isEmpty) return const SizedBox.shrink();
@@ -1148,27 +1381,9 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
   }
 
   Widget _statusKerjasamaCard(Project project) {
-    String statusLabel;
-    Color statusColor;
-    IconData statusIcon;
-
-    switch (project.status) {
-      case 'hired':
-        statusLabel = 'UNDANGAN DITERIMA';
-        statusColor = const Color(0xFF006D77);
-        statusIcon = Icons.handshake_outlined;
-        break;
-      case 'in_progress':
-      case 'ongoing':
-        statusLabel = 'SEDANG BERJALAN';
-        statusColor = const Color(0xFFE29578);
-        statusIcon = Icons.trending_up;
-        break;
-      default:
-        statusLabel = project.status.toUpperCase();
-        statusColor = const Color(0xFF424750);
-        statusIcon = Icons.work_outline;
-    }
+    const statusColor = Color(0xFFE29578);
+    const statusIcon = Icons.trending_up;
+    const statusLabel = 'SEDANG BERJALAN';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -1208,15 +1423,14 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
                         color: statusColor.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: Row(
+                      child: const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(statusIcon,
-                              size: 10, color: statusColor),
-                          const SizedBox(width: 4),
+                          Icon(statusIcon, size: 10, color: statusColor),
+                          SizedBox(width: 4),
                           Text(
                             statusLabel,
-                            style: GoogleFonts.inter(
+                            style: TextStyle(
                               fontSize: 9,
                               fontWeight: FontWeight.w700,
                               color: statusColor,
@@ -1230,9 +1444,8 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
                         project.applicantCount! > 0)
                       Row(
                         children: [
-                          Icon(Icons.people_outline,
-                              size: 12,
-                              color: const Color(0xFF424750)),
+                          const Icon(Icons.people_outline,
+                              size: 12, color: Color(0xFF424750)),
                           const SizedBox(width: 3),
                           Text(
                             '${project.applicantCount} apply',
@@ -1258,8 +1471,8 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    Icon(Icons.attach_money,
-                        size: 13, color: const Color(0xFF006D77)),
+                    const Icon(Icons.attach_money,
+                        size: 13, color: Color(0xFF006D77)),
                     Text(
                       project.budget,
                       style: GoogleFonts.inter(
@@ -1277,9 +1490,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        project.status == 'hired'
-                            ? 'Bayar Sekarang'
-                            : 'Lihat Detail',
+                        'Lihat Detail',
                         style: GoogleFonts.inter(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -1330,9 +1541,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
             'Unggah proyek pertamamu untuk\nmenemukan talenta terbaik.',
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(
-                fontSize: 11,
-                color: const Color(0xFF424750),
-                height: 1.4),
+                fontSize: 11, color: const Color(0xFF424750), height: 1.4),
           ),
           const SizedBox(height: 12),
           ElevatedButton.icon(
@@ -1342,8 +1551,8 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF1A4B84),
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 8),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16)),
               textStyle: GoogleFonts.inter(
@@ -1385,27 +1594,47 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
             GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600),
         unselectedLabelStyle:
             GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w400),
-        items: const [
-          BottomNavigationBarItem(
+        items: [
+          const BottomNavigationBarItem(
               icon: Icon(Icons.home_outlined),
               activeIcon: Icon(Icons.home),
               label: 'Beranda'),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
               icon: Icon(Icons.explore_outlined),
               activeIcon: Icon(Icons.explore),
               label: 'Eksplor'),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
               icon: Icon(Icons.auto_awesome_outlined),
               activeIcon: Icon(Icons.auto_awesome),
               label: 'Rekomen AI'),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
               icon: Icon(Icons.assignment_outlined),
               activeIcon: Icon(Icons.assignment),
               label: 'Status Proyek'),
           BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline),
-              activeIcon: Icon(Icons.person),
-              label: 'Profil'),
+            icon: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                const Icon(Icons.person_outline),
+                // ── FIX: badge notif juga di tab Profil ─────────────────
+                if (_unreadNotifCount > 0)
+                  Positioned(
+                    right: -4,
+                    top: -4,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFE53935),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            activeIcon: const Icon(Icons.person),
+            label: 'Profil',
+          ),
         ],
       ),
     );
@@ -1439,6 +1668,25 @@ class _NotificationsSheet extends StatelessWidget {
     required this.notifications,
     required this.onMarkAllRead,
   });
+
+  // ── FIX: helper icon berdasarkan tipe notifikasi ──────────────────────────
+  IconData _iconForType(String? type) {
+    switch (type) {
+      case 'payment':
+      case 'payment_received':
+        return Icons.payment_rounded;
+      case 'project':
+      case 'project_update':
+        return Icons.folder_rounded;
+      case 'application':
+      case 'application_received':
+        return Icons.people_rounded;
+      case 'hired':
+        return Icons.handshake_rounded;
+      default:
+        return Icons.notifications_rounded;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1499,14 +1747,21 @@ class _NotificationsSheet extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.notifications_none_outlined,
-                            size: 40,
-                            color: Colors.grey.shade300),
-                        const SizedBox(height: 8),
+                            size: 48, color: Colors.grey.shade300),
+                        const SizedBox(height: 10),
                         Text(
                           'Belum ada notifikasi',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Notifikasi akan muncul di sini',
                           style: GoogleFonts.inter(
-                              fontSize: 13,
-                              color: Colors.grey.shade500),
+                              fontSize: 12, color: Colors.grey.shade400),
                         ),
                       ],
                     ),
@@ -1514,42 +1769,53 @@ class _NotificationsSheet extends StatelessWidget {
                 : ListView.separated(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     itemCount: notifications.length,
-                    separatorBuilder: (_, __) => const Divider(
-                        height: 1, indent: 58),
+                    separatorBuilder: (_, __) =>
+                        const Divider(height: 1, indent: 58),
                     itemBuilder: (ctx, i) {
                       final notif = notifications[i];
                       final isUnread = notif['read_at'] == null;
-                      final title =
-                          notif['data']?['title']?.toString() ??
-                              notif['title']?.toString() ??
-                              'Notifikasi';
-                      final body =
-                          notif['data']?['body']?.toString() ??
-                              notif['body']?.toString() ??
-                              '';
+                      // ── FIX: baca title/body dari semua kemungkinan struktur ──
+                      final notifData = notif['data'];
+                      final title = (notifData is Map
+                              ? notifData['title']?.toString()
+                              : null) ??
+                          notif['title']?.toString() ??
+                          'Notifikasi';
+                      final body = (notifData is Map
+                              ? notifData['body']?.toString() ??
+                                  notifData['message']?.toString()
+                              : null) ??
+                          notif['body']?.toString() ??
+                          notif['message']?.toString() ??
+                          '';
+                      final type = (notifData is Map
+                              ? notifData['type']?.toString()
+                              : null) ??
+                          notif['type']?.toString();
+                      final createdAt = notif['created_at']?.toString() ?? '';
+
                       return Container(
                         color: isUnread
                             ? const Color(0xFF1A4B84).withOpacity(0.04)
                             : Colors.transparent,
                         child: ListTile(
                           contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 4),
+                              horizontal: 16, vertical: 6),
                           leading: Container(
-                            width: 36,
-                            height: 36,
+                            width: 38,
+                            height: 38,
                             decoration: BoxDecoration(
                               color: isUnread
-                                  ? const Color(0xFF1A4B84)
-                                      .withOpacity(0.1)
+                                  ? const Color(0xFF1A4B84).withOpacity(0.1)
                                   : Colors.grey.shade100,
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
-                              Icons.notifications_outlined,
+                              _iconForType(type),
                               size: 18,
                               color: isUnread
                                   ? const Color(0xFF1A4B84)
-                                  : Colors.grey,
+                                  : Colors.grey.shade500,
                             ),
                           ),
                           title: Text(
@@ -1562,16 +1828,31 @@ class _NotificationsSheet extends StatelessWidget {
                               color: const Color(0xFF1B1B1F),
                             ),
                           ),
-                          subtitle: body.isNotEmpty
-                              ? Text(
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (body.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(
                                   body,
                                   style: GoogleFonts.inter(
                                       fontSize: 11,
                                       color: const Color(0xFF424750)),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
-                                )
-                              : null,
+                                ),
+                              ],
+                              if (createdAt.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  _formatTime(createdAt),
+                                  style: GoogleFonts.inter(
+                                      fontSize: 10,
+                                      color: Colors.grey.shade400),
+                                ),
+                              ],
+                            ],
+                          ),
                           trailing: isUnread
                               ? Container(
                                   width: 8,
@@ -1590,5 +1871,20 @@ class _NotificationsSheet extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _formatTime(String isoString) {
+    try {
+      final dt = DateTime.parse(isoString).toLocal();
+      final now = DateTime.now();
+      final diff = now.difference(dt);
+      if (diff.inMinutes < 1) return 'Baru saja';
+      if (diff.inMinutes < 60) return '${diff.inMinutes} menit lalu';
+      if (diff.inHours < 24) return '${diff.inHours} jam lalu';
+      if (diff.inDays < 7) return '${diff.inDays} hari lalu';
+      return '${dt.day}/${dt.month}/${dt.year}';
+    } catch (_) {
+      return '';
+    }
   }
 }

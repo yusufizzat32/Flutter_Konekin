@@ -60,6 +60,11 @@ class _ExploreCreativesPageState extends State<ExploreCreativesPage> {
 
       // 2) Selalu ambil semua kreator via search (query kosong = ambil semua)
       final allResult = await _api.searchCreatives();
+         debugPrint('=== searchCreatives result ===');
+    debugPrint('success: ${allResult['success']}');
+    debugPrint('data type: ${allResult['data'].runtimeType}');
+    debugPrint('data: ${allResult['data']}');
+    debugPrint('message: ${allResult['message']}');
       List<Map<String, dynamic>> allList = [];
 
       if (allResult['success'] == true && allResult['data'] != null) {
@@ -78,6 +83,7 @@ class _ExploreCreativesPageState extends State<ExploreCreativesPage> {
       }
     } catch (e) {
       debugPrint('Error loading creatives: $e');
+      
       if (mounted) setState(() => _isLoading = false);
     }
   }
