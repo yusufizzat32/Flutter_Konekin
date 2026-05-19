@@ -11,7 +11,8 @@ class AiRecommendationPage extends StatefulWidget {
   State<AiRecommendationPage> createState() => _AiRecommendationPageState();
 }
 
-class _AiRecommendationPageState extends State<AiRecommendationPage> {
+class _AiRecommendationPageState extends State<AiRecommendationPage>
+    with TickerProviderStateMixin {
   final ApiService _api = ApiService();
   final _formKey = GlobalKey<FormState>();
 
@@ -22,9 +23,9 @@ class _AiRecommendationPageState extends State<AiRecommendationPage> {
   final _tahunBerdiriCtrl = TextEditingController();
   final _tenagaKerjaPerempuanCtrl = TextEditingController();
   final _tenagaKerjaLakiCtrl = TextEditingController();
-  final _budgetMinCtrl = TextEditingController();
+  final _budgetMaxCtrl = TextEditingController();
 
-  // Dropdown values
+  // Dropdown values — sesuai opsi dari screenshot
   String _selectedJenisUsaha = 'Jasa';
   String _selectedMarketplace = 'Shopee';
   String _selectedLegalitas = 'Terdaftar';
@@ -33,90 +34,65 @@ class _AiRecommendationPageState extends State<AiRecommendationPage> {
 
   // State
   bool _isLoading = false;
-  bool _flaskConnected = false;
-  bool _modelLoaded = false;
+  String? _errorMessage;
   List<Map<String, dynamic>>? _results;
 
+  late AnimationController _fadeController;
+  late Animation<double> _fadeAnimation;
+
+  // ── Opsi dropdown sesuai screenshot ──────────────────────────────────────
+
   final List<String> _jenisUsahaOptions = [
-    'Jasa', 'Dagang', 'Manufaktur', 'Pertanian', 'Peternakan', 'Perikanan', 'Lainnya'
+    'Jasa',
+    'Perdagangan',
+    'Kesehatan',
+    'Pendidikan',
+    'Makanan & Minuman',
+    'Fashion',
+    'Perusahaan',
+    'Lainnya / Unknown',
   ];
+
   final List<String> _marketplaceOptions = [
-    'Shopee', 'Tokopedia', 'Lazada', 'Bukalapak', 'Blibli', 'Tidak Ada'
+    'Tokopedia',
+    'Shopee',
+    'Bukalapak',
+    'Lazada',
+    'Website Sendiri',
+    'Tidak Ada',
+    'Lainnya / Unknown',
   ];
+
   final List<String> _legalitasOptions = [
-    'Terdaftar', 'Belum Terdaftar', 'Dalam Proses'
+    'Terdaftar',
+    'Belum Terdaftar',
+    'Lainnya / Unknown',
   ];
+
   final List<String> _levelPengalamanOptions = [
-    'Semua tingkat', 'Pemula', 'Menengah', 'Senior'
+    'Semua tingkat',
+    'Beginner',
+    'Intermediate',
+    'Expert',
   ];
+
   final List<String> _jumlahHasilOptions = [
-    'Top 5', 'Top 10', 'Top 20', 'Semua'
+    'Top 3',
+    'Top 5',
+    'Top 10',
+    'Top 15',
   ];
 
   @override
   void initState() {
     super.initState();
-    _checkFlaskStatus();
-  }
-
-  Future<void> _checkFlaskStatus() async {
-    final status = await _api.checkFlaskStatus();
-    if (mounted) {
-      setState(() {
-        _flaskConnected = status['connected'] ?? false;
-        _modelLoaded = status['model_loaded'] ?? false;
-      });
-    }
-  }
-
-  Future<void> _runRecommendation() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() => _isLoading = true);
-
-    final payload = {
-      'omset': _parseNumber(_omsetCtrl.text),
-      'laba': _parseNumber(_labaCtrl.text),
-      'aset': _parseNumber(_asetCtrl.text),
-      'tahun_berdiri': int.tryParse(_tahunBerdiriCtrl.text) ?? DateTime.now().year,
-      'jenis_usaha': _selectedJenisUsaha,
-      'marketplace': _selectedMarketplace,
-      'status_legalitas': _selectedLegalitas,
-      'tenaga_kerja_perempuan': int.tryParse(_tenagaKerjaPerempuanCtrl.text) ?? 0,
-      'tenaga_kerja_laki': int.tryParse(_tenagaKerjaLakiCtrl.text) ?? 0,
-      'jumlah_hasil': _selectedJumlahHasil,
-      'level_pengalaman': _selectedLevelPengalaman,
-      'budget_minimum': _parseNumber(_budgetMinCtrl.text),
-    };
-
-    final result = await _api.getAiRecommendations(payload);
-
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-        if (result['success'] == true && result['data'] != null) {
-          final data = result['data'];
-          if (data is List) {
-            _results = data.map((e) => Map<String, dynamic>.from(e)).toList();
-          } else if (data is Map && data['recommendations'] is List) {
-            _results = (data['recommendations'] as List)
-                .map((e) => Map<String, dynamic>.from(e))
-                .toList();
-          }
-        }
-      });
-    }
-  }
-
-  int _parseNumber(String text) {
-    final cleaned = text.replaceAll(RegExp(r'[^\d]'), '');
-    return int.tryParse(cleaned) ?? 0;
-  }
-
-  void _resetForm() {
-    setState(() {
-      _results = null;
-    });
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+    _fadeAnimation =
+        CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
+    _fadeController.forward();
   }
 
   @override
@@ -127,73 +103,153 @@ class _AiRecommendationPageState extends State<AiRecommendationPage> {
     _tahunBerdiriCtrl.dispose();
     _tenagaKerjaPerempuanCtrl.dispose();
     _tenagaKerjaLakiCtrl.dispose();
-    _budgetMinCtrl.dispose();
+    _budgetMaxCtrl.dispose();
+    _fadeController.dispose();
     super.dispose();
   }
+
+  int _parseNumber(String text) {
+    final cleaned = text.replaceAll(RegExp(r'[^\d]'), '');
+    return int.tryParse(cleaned) ?? 0;
+  }
+
+  int _parseJumlahHasil(String val) {
+    final num = int.tryParse(val.replaceAll(RegExp(r'[^\d]'), ''));
+    return num ?? 5;
+  }
+
+  Future<void> _runRecommendation() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    final payload = {
+      'omset': _parseNumber(_omsetCtrl.text),
+      'laba': _parseNumber(_labaCtrl.text),
+      'aset': _parseNumber(_asetCtrl.text),
+      'tahun_berdiri':
+          int.tryParse(_tahunBerdiriCtrl.text) ?? DateTime.now().year,
+      'jenis_usaha': _selectedJenisUsaha,
+      'marketplace': _selectedMarketplace,
+      'status_legalitas': _selectedLegalitas,
+      'tenaga_kerja_perempuan':
+          int.tryParse(_tenagaKerjaPerempuanCtrl.text) ?? 0,
+      'tenaga_kerja_laki':
+          int.tryParse(_tenagaKerjaLakiCtrl.text) ?? 0,
+      'level_pengalaman': _selectedLevelPengalaman,
+      'jumlah_hasil': _parseJumlahHasil(_selectedJumlahHasil),
+      'budget_maksimal': _parseNumber(_budgetMaxCtrl.text),
+    };
+
+    final result = await _api.getAiRecommendations(payload);
+
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        if (result['success'] == true && result['data'] != null) {
+          final data = result['data'];
+          List<Map<String, dynamic>> parsed = [];
+          if (data is List) {
+            parsed =
+                data.map((e) => Map<String, dynamic>.from(e)).toList();
+          } else if (data is Map) {
+            final recs = data['recommendations'] ??
+                data['creatives'] ??
+                data['data'] ??
+                [];
+            if (recs is List) {
+              parsed =
+                  recs.map((e) => Map<String, dynamic>.from(e)).toList();
+            }
+          }
+          if (parsed.isEmpty) {
+            _errorMessage =
+                'Tidak ada rekomendasi ditemukan. Coba ubah parameter.';
+          } else {
+            // Debug: print field names dari item pertama
+            if (parsed.isNotEmpty) {
+              // ignore: avoid_print
+              print('[DEBUG] Flask fields: \${parsed.first.keys.toList()}');
+              // ignore: avoid_print
+              print('[DEBUG] First item: \${parsed.first}');
+            }
+            _results = parsed;
+            _fadeController.reset();
+            _fadeController.forward();
+          }
+        } else {
+          _errorMessage = result['message'] ??
+              'Gagal mendapatkan rekomendasi. Pastikan server berjalan.';
+        }
+      });
+    }
+  }
+
+  void _resetForm() {
+    setState(() {
+      _results = null;
+      _errorMessage = null;
+    });
+    _fadeController.reset();
+    _fadeController.forward();
+  }
+
+  // ============================================================
+  // BUILD
+  // ============================================================
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFBF8FE),
+      backgroundColor: const Color(0xFFF5F7FA),
+      // AppBar tanpa teks judul — judul sudah ada di header banner
       appBar: AppBar(
-        title: Text(
-          'Rekomendasi Kreator AI',
-          style: GoogleFonts.plusJakartaSans(
-            fontWeight: FontWeight.w700,
-            fontSize: 18,
-          ),
-        ),
         backgroundColor: Colors.white,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Color(0xFF1A4B84)),
-          onPressed: () => Navigator.pop(context),
-        ),
+        surfaceTintColor: Colors.transparent,
+        automaticallyImplyLeading: false,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header Gradient
-            _buildHeaderBanner(),
-            const SizedBox(height: 20),
-
-            // Flask Status
-            _buildFlaskStatusCard(),
-            const SizedBox(height: 20),
-
-            if (_results == null) ...[
-              // Form Input UMKM
-              _buildFormSection(),
-            ] else ...[
-              // Hasil Rekomendasi
-              _buildResultsSection(),
+      body: FadeTransition(
+        opacity: _fadeAnimation,
+        child: SingleChildScrollView(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeaderBanner(),
+              const SizedBox(height: 20),
+              if (_results == null) ...[
+                _buildFormCard(),
+                const SizedBox(height: 12),
+                if (_errorMessage != null) _buildErrorBanner(),
+                const SizedBox(height: 20),
+                _buildRunButton(),
+                const SizedBox(height: 32),
+              ] else ...[
+                _buildResultsSection(),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
   }
+
+  // ============================================================
+  // HEADER BANNER
+  // ============================================================
 
   Widget _buildHeaderBanner() {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF003466), Color(0xFF1A4B84)],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF1A4B84).withOpacity(0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
+        color: const Color(0xFF1A3A6B),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -201,154 +257,250 @@ class _AiRecommendationPageState extends State<AiRecommendationPage> {
           Row(
             children: [
               Container(
-                width: 50,
-                height: 50,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(14),
+                  color: Colors.white.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.auto_awesome, color: Color(0xFF68FADD), size: 28),
+                child: const Icon(Icons.analytics_outlined,
+                    color: Colors.white, size: 20),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  'Rekomendasi Kreator AI untuk UMKM Kamu',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    height: 1.3,
-                  ),
+              const SizedBox(width: 10),
+              Text(
+                'AI ANALYTICS',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF68FADD),
+                  letterSpacing: 1.2,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
           Text(
-            'Masukkan data UMKM yang kamu butuhkan, kirim ke Flask ML service, lalu temukan creative worker yang paling cocok dengan proyek kamu.',
+            'Rekomendasi AI',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Temukan Kreatormu ✶',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF68FADD),
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Input data UMKM Anda untuk mendapatkan rekomendasi kreator yang paling sesuai berdasarkan industri, skala bisnis, dan anggaran yang tersedia.',
             style: GoogleFonts.inter(
-              fontSize: 13,
-              color: Colors.white.withOpacity(0.85),
+              fontSize: 12,
+              color: Colors.white.withOpacity(0.75),
               height: 1.5,
             ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              _buildMiniStepBadge('1', 'Input data bisnis UMKM'),
-              const SizedBox(width: 8),
-              _buildMiniStepBadge('2', 'Flask ML prediksi cluster'),
-              const SizedBox(width: 8),
-              _buildMiniStepBadge('3', 'Lihat rekomendasi kreator'),
-            ],
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildMiniStepBadge(String step, String text) {
-    return Expanded(
-      child: Column(
-        children: [
-          Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              color: const Color(0xFF68FADD),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Center(
-              child: Text(
-                step,
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF003466),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            text,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              fontSize: 9,
-              color: Colors.white70,
-              height: 1.3,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // ============================================================
+  // FORM CARD
+  // ============================================================
 
-  Widget _buildFlaskStatusCard() {
+  Widget _buildFormCard() {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: _flaskConnected
-              ? const Color(0xFF006D77).withOpacity(0.3)
-              : Colors.red.withOpacity(0.3),
-        ),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          children: [
+            // Omset & Laba
+            Row(
+              children: [
+                Expanded(
+                  child: _buildField(
+                    controller: _omsetCtrl,
+                    label: 'Omset',
+                    hint: '5.000.000',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildField(
+                    controller: _labaCtrl,
+                    label: 'Laba',
+                    hint: '8.000.000',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            // Aset & Tahun Berdiri
+            Row(
+              children: [
+                Expanded(
+                  child: _buildField(
+                    controller: _asetCtrl,
+                    label: 'Aset',
+                    hint: '2.000.000',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildField(
+                    controller: _tahunBerdiriCtrl,
+                    label: 'Tahun Berdiri',
+                    hint: '2024',
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            // Jenis Usaha
+            _buildDropdown(
+              label: 'Jenis Usaha',
+              value: _selectedJenisUsaha,
+              items: _jenisUsahaOptions,
+              onChanged: (v) =>
+                  setState(() => _selectedJenisUsaha = v!),
+            ),
+            const SizedBox(height: 14),
+
+            // Marketplace & Legalitas — dropdown (bukan TextField)
+            Row(
+              children: [
+                Expanded(
+                  child: _buildDropdown(
+                    label: 'Marketplace',
+                    value: _selectedMarketplace,
+                    items: _marketplaceOptions,
+                    onChanged: (v) =>
+                        setState(() => _selectedMarketplace = v!),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildDropdown(
+                    label: 'Legalitas',
+                    value: _selectedLegalitas,
+                    items: _legalitasOptions,
+                    onChanged: (v) =>
+                        setState(() => _selectedLegalitas = v!),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            // Tenaga Kerja P & L
+            Row(
+              children: [
+                Expanded(
+                  child: _buildField(
+                    controller: _tenagaKerjaPerempuanCtrl,
+                    label: 'Tenaga Kerja (P)',
+                    hint: '5',
+                    keyboardType: TextInputType.number,
+                    required: false,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildField(
+                    controller: _tenagaKerjaLakiCtrl,
+                    label: 'Tenaga Kerja (L)',
+                    hint: '5',
+                    keyboardType: TextInputType.number,
+                    required: false,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            // Filter Level Pengalaman & Jumlah Hasil
+            Row(
+              children: [
+                Expanded(
+                  child: _buildDropdown(
+                    label: 'Filter Level Pengalaman',
+                    value: _selectedLevelPengalaman,
+                    items: _levelPengalamanOptions,
+                    onChanged: (v) =>
+                        setState(() => _selectedLevelPengalaman = v!),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildDropdown(
+                    label: 'Jumlah Hasil',
+                    value: _selectedJumlahHasil,
+                    items: _jumlahHasilOptions,
+                    onChanged: (v) =>
+                        setState(() => _selectedJumlahHasil = v!),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            // Anggaran Maksimal
+            _buildField(
+              controller: _budgetMaxCtrl,
+              label: 'Anggaran Maksimal (Rp)',
+              hint: '400.000',
+              required: false,
+              helperText:
+                  'Opsional, kalau ingin menyaring berdasarkan anggaran.',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorBanner() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF3F3),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red.withOpacity(0.25)),
       ),
       child: Row(
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: _flaskConnected
-                  ? const Color(0xFF006D77).withOpacity(0.1)
-                  : Colors.red.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              _flaskConnected ? Icons.check_circle_outline : Icons.error_outline,
-              color: _flaskConnected ? const Color(0xFF006D77) : Colors.red,
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 12),
+          const Icon(Icons.error_outline, color: Colors.red, size: 18),
+          const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Status Flask',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    color: const Color(0xFF424750),
-                  ),
-                ),
-                Text(
-                  _flaskConnected ? 'Terhubung · Model Ready' : 'Tidak terhubung',
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: _flaskConnected ? const Color(0xFF006D77) : Colors.red,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: _flaskConnected ? const Color(0xFF006D77) : Colors.red,
-              shape: BoxShape.circle,
+            child: Text(
+              _errorMessage!,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: Colors.red.shade700,
+                height: 1.4,
+              ),
             ),
           ),
         ],
@@ -356,347 +508,172 @@ class _AiRecommendationPageState extends State<AiRecommendationPage> {
     );
   }
 
-  // ==================== FORM INPUT ====================
-
-  Widget _buildFormSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Data UMKM',
-          style: GoogleFonts.plusJakartaSans(
-            fontWeight: FontWeight.w700,
-            fontSize: 18,
-            color: const Color(0xFF1B1B1F),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Isi parameter untuk analisis model (KMeans + TF-IDF)',
-          style: GoogleFonts.inter(
-            fontSize: 12,
-            color: const Color(0xFF424750),
-          ),
-        ),
-        const SizedBox(height: 14),
-
-        Form(
-          key: _formKey,
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                // Row 1: Omset & Laba
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildInputField(
-                        controller: _omsetCtrl,
-                        label: 'OMSET',
-                        hint: '50.000.000',
-                        icon: Icons.trending_up,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildInputField(
-                        controller: _labaCtrl,
-                        label: 'LABA',
-                        hint: '10.000.000',
-                        icon: Icons.savings_outlined,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-
-                // Row 2: Aset & Tahun Berdiri
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildInputField(
-                        controller: _asetCtrl,
-                        label: 'ASET',
-                        hint: '20.000.000',
-                        icon: Icons.account_balance_outlined,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildInputField(
-                        controller: _tahunBerdiriCtrl,
-                        label: 'TAHUN BERDIRI',
-                        hint: '2026',
-                        icon: Icons.calendar_today,
-                        keyboardType: TextInputType.number,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-
-                // Row 3: Jenis Usaha & Marketplace
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildDropdownField(
-                        label: 'JENIS USAHA',
-                        value: _selectedJenisUsaha,
-                        items: _jenisUsahaOptions,
-                        onChanged: (v) => setState(() => _selectedJenisUsaha = v!),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildDropdownField(
-                        label: 'MARKETPLACE',
-                        value: _selectedMarketplace,
-                        items: _marketplaceOptions,
-                        onChanged: (v) => setState(() => _selectedMarketplace = v!),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-
-                // Row 4: Status Legalitas
-                _buildDropdownField(
-                  label: 'STATUS LEGALITAS',
-                  value: _selectedLegalitas,
-                  items: _legalitasOptions,
-                  onChanged: (v) => setState(() => _selectedLegalitas = v!),
-                ),
-                const SizedBox(height: 14),
-
-                // Row 5: Tenaga Kerja
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildInputField(
-                        controller: _tenagaKerjaPerempuanCtrl,
-                        label: 'TENAGA KERJA ♀',
-                        hint: '0',
-                        icon: Icons.people_outline,
-                        keyboardType: TextInputType.number,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildInputField(
-                        controller: _tenagaKerjaLakiCtrl,
-                        label: 'TENAGA KERJA ♂',
-                        hint: '0',
-                        icon: Icons.people_outline,
-                        keyboardType: TextInputType.number,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-
-                // Row 6: Jumlah Hasil & Level Pengalaman
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildDropdownField(
-                        label: 'JUMLAH HASIL',
-                        value: _selectedJumlahHasil,
-                        items: _jumlahHasilOptions,
-                        onChanged: (v) => setState(() => _selectedJumlahHasil = v!),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildDropdownField(
-                        label: 'LEVEL PENGALAMAN',
-                        value: _selectedLevelPengalaman,
-                        items: _levelPengalamanOptions,
-                        onChanged: (v) => setState(() => _selectedLevelPengalaman = v!),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-
-                // Row 7: Budget Minimum
-                _buildInputField(
-                  controller: _budgetMinCtrl,
-                  label: 'BUDGET MINIMUM KREATOR',
-                  hint: '3.000.000',
-                  icon: Icons.attach_money,
-                  helperText: 'Opsional. Kosongkan jika tidak ingin filter budget.',
-                ),
-              ],
-            ),
-          ),
-        ),
-
-        const SizedBox(height: 20),
-
-        // Kenapa ini penting?
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A4B84).withOpacity(0.05),
+  Widget _buildRunButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: _isLoading ? null : _runRecommendation,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF1A3A6B),
+          foregroundColor: Colors.white,
+          disabledBackgroundColor:
+              const Color(0xFF1A3A6B).withOpacity(0.5),
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFF1A4B84).withOpacity(0.1)),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.lightbulb_outline, size: 20, color: const Color(0xFF1A4B84)),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Kenapa Ini Penting?',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                      color: const Color(0xFF1A4B84),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Kamu tidak perlu menebak role mana yang cocok. Model machine learning membantu menyeleksi creative worker berdasarkan pola UMKM yang mirip.',
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  color: const Color(0xFF424750),
-                  height: 1.5,
+          elevation: 0,
+        ),
+        child: _isLoading
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white),
+              )
+            : Text(
+                'Jalankan Rekomendasi',
+                style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
                 ),
               ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 14),
-
-        Text(
-          'Catatan: Kamu boleh mengetik angka pakai pemisah ribuan. Sistem akan membersihkannya otomatis.',
-          style: GoogleFonts.inter(
-            fontSize: 10,
-            color: const Color(0xFF424750).withOpacity(0.5),
-            fontStyle: FontStyle.italic,
-          ),
-        ),
-
-        const SizedBox(height: 20),
-
-        // Tombol Jalankan
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: _isLoading ? null : _runRecommendation,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1A4B84),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            child: _isLoading
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
-                : Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.auto_awesome, size: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Jalankan Rekomendasi AI',
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ],
-                  ),
-          ),
-        ),
-
-        const SizedBox(height: 32),
-      ],
+      ),
     );
   }
 
-  // ==================== HASIL REKOMENDASI ====================
+  // ============================================================
+  // RESULTS SECTION
+  // ============================================================
 
   Widget _buildResultsSection() {
-    final clusterName = _results!.isNotEmpty
-        ? (_results![0]['cluster_name'] ?? 'Cluster Rekomendasi')
-        : 'Hasil Rekomendasi';
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Expanded(
-              child: Text(
-                clusterName,
-                style: GoogleFonts.plusJakartaSans(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 18,
-                  color: const Color(0xFF1B1B1F),
-                ),
+            Text(
+              'Hasil Rekomendasi',
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
+                color: const Color(0xFF1B1B1F),
               ),
             ),
-            TextButton.icon(
-              onPressed: _resetForm,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: Text(
-                'Input Ulang',
-                style: GoogleFonts.inter(fontSize: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A3A6B).withOpacity(0.08),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                '${_results!.length} Kreator',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF1A3A6B),
+                ),
               ),
             ),
           ],
         ),
-        Text(
-          'Total kandidat ditemukan: ${_results!.length}',
-          style: GoogleFonts.inter(
-            fontSize: 13,
-            color: const Color(0xFF424750),
+        const SizedBox(height: 4),
+        TextButton.icon(
+          onPressed: _resetForm,
+          icon:
+              const Icon(Icons.arrow_back_ios_new, size: 12),
+          label: Text(
+            'Ubah Parameter',
+            style: GoogleFonts.inter(fontSize: 12),
+          ),
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF1A3A6B),
+            padding: EdgeInsets.zero,
           ),
         ),
-        const SizedBox(height: 16),
-
-        ..._results!.map((creative) => _buildCreativeResultCard(creative)),
-
+        const SizedBox(height: 12),
+        ..._results!.asMap().entries.map(
+              (e) => _buildCreativeCard(e.value, e.key),
+            ),
         const SizedBox(height: 32),
       ],
     );
   }
 
-  Widget _buildCreativeResultCard(Map<String, dynamic> creative) {
-    final name = creative['name'] ?? '';
-    final role = creative['role'] ?? '';
-    final verified = creative['verified'] == true;
-    final matchScore = creative['match_score'] ?? 0.0;
-    final rating = (creative['rating'] ?? 0.0).toDouble();
-    final projects = creative['projects_count'] ?? 0;
-    final successRate = (creative['success_rate'] ?? 0.0).toDouble();
-    final budget = creative['budget'] ?? 0;
-    final skills = creative['skills'] as List<dynamic>? ?? [];
-    final city = creative['city'] ?? 'Lokasi tidak diatur';
-    final photo = creative['profile_photo'] ?? '';
-    final bio = creative['bio'] ?? 'Creative worker yang direkomendasikan oleh model machine learning.';
+  Widget _buildCreativeCard(
+      Map<String, dynamic> creative, int index) {
+    final name = (creative['full_name'] ??
+        creative['name'] ??
+        '').toString();
+    final role = (creative['specific_role'] ??
+        creative['job_category'] ??
+        creative['role'] ??
+        '').toString();
+    final matchScore = double.tryParse(
+        (creative['similarity_score'] ??
+         creative['match_score'] ??
+         0).toString()) ?? 0.0;
+    final rating = double.tryParse(
+        (creative['client_rating'] ??
+         creative['average_rating'] ??
+         creative['rating'] ??
+         0).toString()) ?? 0.0;
+    final projects = int.tryParse(
+        (creative['jobs_completed'] ??
+         creative['completed_projects'] ??
+         creative['projects_count'] ??
+         0).toString()) ?? 0;
+    final successRate = double.tryParse(
+        (creative['success_rate_job'] ??
+         creative['rehire_rate'] ??
+         creative['success_rate'] ??
+         0).toString()) ?? 0.0;
+    final budget = int.tryParse(
+        (creative['min_budget_idr'] ??
+         creative['budget'] ??
+         creative['harga_mulai'] ??
+         0).toString()) ?? 0;
+    // Flask bisa kirim skills sebagai String "A, B, C" atau List — handle keduanya
+    final List<String> skills = () {
+      final raw = creative['skills'];
+      if (raw == null) return <String>[];
+      if (raw is List) return raw.map((e) => e.toString()).toList();
+      if (raw is String && raw.trim().isNotEmpty) {
+        return raw.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+      }
+      return <String>[];
+    }();
+    final photo = (creative['profile_photo'] ??
+        creative['foto'] ??
+        creative['avatar'] ??
+        creative['photo'] ??
+        creative['image'] ??
+        '').toString();
+    final bio = (creative['bio'] ??
+        creative['description'] ??
+        creative['about'] ??
+        '').toString();
+    final experienceLevel = (creative['experience_level'] ?? '').toString();
+    final experienceYears = (creative['experience_years'] ?? '').toString();
+
+    final initials = name.isNotEmpty
+        ? name
+            .split(' ')
+            .take(2)
+            .map((w) => w.isNotEmpty ? w[0].toUpperCase() : '')
+            .join()
+        : '?';
+
+    const gradients = [
+      [Color(0xFF1A3A6B), Color(0xFF2563EB)],
+      [Color(0xFF065F46), Color(0xFF059669)],
+      [Color(0xFF7C2D12), Color(0xFFEA580C)],
+      [Color(0xFF4C1D95), Color(0xFF7C3AED)],
+      [Color(0xFF1E3A5F), Color(0xFF0EA5E9)],
+    ];
+    final grad = gradients[index % gradients.length];
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -706,41 +683,40 @@ class _AiRecommendationPageState extends State<AiRecommendationPage> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF1A4B84).withOpacity(0.06),
+            color: Colors.black.withOpacity(0.05),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
         ],
-        border: Border.all(color: const Color(0xFFEAE7ED).withOpacity(0.5)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
           Row(
             children: [
-              // Avatar
               Container(
-                width: 50,
-                height: 50,
+                width: 52,
+                height: 52,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF1A4B84), Color(0xFF006D77)],
+                  gradient: LinearGradient(
+                    colors: grad,
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
                   borderRadius: BorderRadius.circular(14),
                   image: photo.isNotEmpty
-                      ? DecorationImage(image: NetworkImage(photo), fit: BoxFit.cover)
+                      ? DecorationImage(
+                          image: NetworkImage(photo),
+                          fit: BoxFit.cover)
                       : null,
                 ),
                 child: photo.isEmpty
                     ? Center(
                         child: Text(
-                          name.isNotEmpty ? name[0].toUpperCase() : '?',
-                          style: GoogleFonts.inter(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 20,
+                          initials,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 18,
                             color: Colors.white,
                           ),
                         ),
@@ -766,86 +742,74 @@ class _AiRecommendationPageState extends State<AiRecommendationPage> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (verified)
+                        if (matchScore > 0)
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF006D77).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(6),
+                              color: const Color(0xFFEFF6FF),
+                              borderRadius:
+                                  BorderRadius.circular(6),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.verified, size: 12, color: const Color(0xFF006D77)),
-                                const SizedBox(width: 3),
-                                Text(
-                                  'Terverifikasi',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w600,
-                                    color: const Color(0xFF006D77),
-                                  ),
-                                ),
-                              ],
+                            child: Text(
+                              'MATCH ${matchScore.toStringAsFixed(0)}%',
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF1D4ED8),
+                              ),
                             ),
                           ),
                       ],
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      role,
-                      style: GoogleFonts.inter(fontSize: 13, color: const Color(0xFF424750)),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            role,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: const Color(0xFF6B7280),
+                            ),
+                          ),
+                        ),
+                        if (experienceLevel.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF0FDF4),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: const Color(0xFF86EFAC)),
+                            ),
+                            child: Text(
+                              experienceLevel,
+                              style: GoogleFonts.inter(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF16A34A),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 12),
 
-          const SizedBox(height: 10),
-
-          // Match Score
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF1A4B84), Color(0xFF003466)],
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  'MATCH ${matchScore.toStringAsFixed(0)}%',
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Icon(Icons.location_on_outlined, size: 12, color: const Color(0xFF424750).withOpacity(0.5)),
-              const SizedBox(width: 2),
-              Text(
-                city,
-                style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF424750).withOpacity(0.6)),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 10),
-
-          // Skills
           if (skills.isNotEmpty)
             Wrap(
               spacing: 6,
               runSpacing: 4,
-              children: skills.take(5).map((skill) {
+              children: skills.take(4).map((skill) {
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF5F3F7),
+                    color: const Color(0xFFF3F4F6),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
@@ -853,69 +817,69 @@ class _AiRecommendationPageState extends State<AiRecommendationPage> {
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
-                      color: const Color(0xFF1A4B84),
+                      color: const Color(0xFF374151),
                     ),
                   ),
                 );
               }).toList(),
             ),
 
-          const SizedBox(height: 10),
+          if (skills.isNotEmpty) const SizedBox(height: 12),
 
-          // Stats Row
           Row(
             children: [
-              _buildMiniStat('RATING', rating.toStringAsFixed(1), Icons.star_rounded, Colors.amber),
-              const SizedBox(width: 16),
-              _buildMiniStat('PROJECT', '$projects', Icons.work_outline, const Color(0xFF1A4B84)),
-              const SizedBox(width: 16),
-              _buildMiniStat('SUCCESS', '${successRate.toStringAsFixed(1)}%', Icons.trending_up, const Color(0xFF006D77)),
-              const Spacer(),
-              _buildMiniStat('BUDGET', 'Rp ${_formatCurrency(budget)}', Icons.attach_money, const Color(0xFFE29578)),
+              _buildStat('RATING', rating > 0 ? rating.toStringAsFixed(1) : '-'),
+              _buildStatDivider(),
+              _buildStat('PROYEK', '$projects'),
+              _buildStatDivider(),
+              _buildStat('SUKSES', successRate > 0 ? '${successRate.toStringAsFixed(0)}%' : '-'),
+              _buildStatDivider(),
+              _buildStat('MULAI', budget > 0 ? _formatCurrency(budget) : '-'),
             ],
           ),
+          const SizedBox(height: 12),
 
-          const SizedBox(height: 10),
-
-          // Bio
           Text(
             bio,
             style: GoogleFonts.inter(
-              fontSize: 11,
-              color: const Color(0xFF424750),
-              height: 1.4,
+              fontSize: 12,
+              color: const Color(0xFF6B7280),
+              height: 1.45,
             ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
-
           const SizedBox(height: 12),
 
-          // Action Button
           SizedBox(
             width: double.infinity,
-            child: OutlinedButton.icon(
+            child: ElevatedButton(
               onPressed: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (_) => CreativeDetailPage(
-                      creativeId: creative['id']?.toString() ?? '',
+                      creativeId:
+                          creative['id']?.toString() ?? '',
                     ),
                   ),
                 );
               },
-              icon: const Icon(Icons.person_outline, size: 16),
-              label: Text(
-                'Lihat Profile',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13),
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF1A4B84),
-                side: const BorderSide(color: Color(0xFF1A4B84)),
-                padding: const EdgeInsets.symmetric(vertical: 10),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1A3A6B),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
+                ),
+                elevation: 0,
+              ),
+              child: Text(
+                'Hire Now',
+                style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
                 ),
               ),
             ),
@@ -925,52 +889,52 @@ class _AiRecommendationPageState extends State<AiRecommendationPage> {
     );
   }
 
-  Widget _buildMiniStat(String label, String value, IconData icon, Color color) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 13, color: color),
-            const SizedBox(width: 3),
-            Text(
-              value,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: color,
-              ),
+  Widget _buildStat(String label, String value) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: const Color(0xFF1B1B1F),
             ),
-          ],
-        ),
-        Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 9,
-            fontWeight: FontWeight.w600,
-            color: const Color(0xFF424750),
           ),
-        ),
-      ],
+          const SizedBox(height: 1),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 9,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF9CA3AF),
+              letterSpacing: 0.3,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  String _formatCurrency(dynamic value) {
-    if (value == null) return '0';
-    final num = value is int ? value : int.tryParse(value.toString()) ?? 0;
-    if (num >= 1000000) return '${(num / 1000000).toStringAsFixed(1)}M';
-    if (num >= 1000) return '${(num / 1000).toStringAsFixed(0)}K';
-    return num.toString();
+  Widget _buildStatDivider() {
+    return Container(
+      width: 1,
+      height: 28,
+      color: const Color(0xFFE5E7EB),
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+    );
   }
 
-  // ==================== WIDGET HELPER FORM ====================
+  // ============================================================
+  // FORM WIDGETS
+  // ============================================================
 
-  Widget _buildInputField({
+  Widget _buildField({
     required TextEditingController controller,
     required String label,
     required String hint,
-    required IconData icon,
     TextInputType keyboardType = TextInputType.number,
+    bool required = true,
     String? helperText,
   }) {
     return Column(
@@ -979,54 +943,73 @@ class _AiRecommendationPageState extends State<AiRecommendationPage> {
         Text(
           label,
           style: GoogleFonts.inter(
-            fontWeight: FontWeight.w600,
-            fontSize: 11,
-            color: const Color(0xFF1B1B1F),
-            letterSpacing: 0.5,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: const Color(0xFF374151),
           ),
         ),
         const SizedBox(height: 6),
-        TextField(
+        TextFormField(
           controller: controller,
           keyboardType: keyboardType,
-          style: GoogleFonts.inter(fontSize: 14),
+          style: GoogleFonts.inter(
+              fontSize: 14, color: const Color(0xFF1B1B1F)),
+          validator: required
+              ? (v) {
+                  if (v == null || v.trim().isEmpty) {
+                    return 'Wajib diisi';
+                  }
+                  return null;
+                }
+              : null,
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: GoogleFonts.inter(
               fontSize: 13,
-              color: const Color(0xFF424750).withOpacity(0.5),
+              color: const Color(0xFF9CA3AF),
             ),
-            prefixIcon: Icon(icon, size: 18, color: const Color(0xFF1A4B84)),
+            helperText: helperText,
+            helperStyle: GoogleFonts.inter(
+              fontSize: 10,
+              color: const Color(0xFF9CA3AF),
+              fontStyle: FontStyle.italic,
+            ),
             filled: true,
-            fillColor: const Color(0xFFF5F3F7),
+            fillColor: const Color(0xFFF9FAFB),
+            contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14, vertical: 12),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide.none,
+              borderSide:
+                  const BorderSide(color: Color(0xFFE5E7EB)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide:
+                  const BorderSide(color: Color(0xFFE5E7EB)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Color(0xFF1A4B84), width: 1.5),
+              borderSide: const BorderSide(
+                  color: Color(0xFF1A3A6B), width: 1.5),
             ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Colors.red),
+            ),
+            focusedErrorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(
+                  color: Colors.red, width: 1.5),
+            ),
             isDense: true,
           ),
         ),
-        if (helperText != null) ...[
-          const SizedBox(height: 4),
-          Text(
-            helperText,
-            style: GoogleFonts.inter(
-              fontSize: 10,
-              color: const Color(0xFF424750).withOpacity(0.5),
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ],
       ],
     );
   }
 
-  Widget _buildDropdownField({
+  Widget _buildDropdown({
     required String label,
     required String value,
     required List<String> items,
@@ -1038,24 +1021,28 @@ class _AiRecommendationPageState extends State<AiRecommendationPage> {
         Text(
           label,
           style: GoogleFonts.inter(
-            fontWeight: FontWeight.w600,
-            fontSize: 11,
-            color: const Color(0xFF1B1B1F),
-            letterSpacing: 0.5,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: const Color(0xFF374151),
           ),
         ),
         const SizedBox(height: 6),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
-            color: const Color(0xFFF5F3F7),
+            color: const Color(0xFFF9FAFB),
             borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
               value: value,
               isExpanded: true,
-              icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF1A4B84)),
+              icon: const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: Color(0xFF6B7280),
+                size: 20,
+              ),
               style: GoogleFonts.inter(
                 fontSize: 14,
                 color: const Color(0xFF1B1B1F),
@@ -1063,16 +1050,33 @@ class _AiRecommendationPageState extends State<AiRecommendationPage> {
               dropdownColor: Colors.white,
               borderRadius: BorderRadius.circular(10),
               onChanged: onChanged,
-              items: items.map((item) {
-                return DropdownMenuItem<String>(
-                  value: item,
-                  child: Text(item),
-                );
-              }).toList(),
+              items: items
+                  .map((item) => DropdownMenuItem<String>(
+                        value: item,
+                        child: Text(item),
+                      ))
+                  .toList(),
             ),
           ),
         ),
       ],
     );
+  }
+
+  // ============================================================
+  // HELPERS
+  // ============================================================
+
+  String _formatCurrency(dynamic value) {
+    if (value == null) return '0';
+    final num =
+        value is int ? value : int.tryParse(value.toString()) ?? 0;
+    if (num >= 1000000) {
+      return '${(num / 1000000).toStringAsFixed(1)}M';
+    }
+    if (num >= 1000) {
+      return '${(num / 1000).toStringAsFixed(0)}k';
+    }
+    return num.toString();
   }
 }

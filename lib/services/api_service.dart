@@ -367,7 +367,7 @@ class ApiService {
     });
   }
 
-   Future<Map<String, dynamic>> searchCreatives({
+    Future<Map<String, dynamic>> searchCreatives({
     String? query,
     String? category,
   }) async {
@@ -391,7 +391,7 @@ class ApiService {
   Future<Map<String, dynamic>> getCreativeDetail(String creativeId) async {
     return _requestWithAuth((token) async {
       return await http.get(
-        Uri.parse('$_baseUrl/creative/profile/$creativeId'),
+        Uri.parse('$_baseUrl/creatives/$creativeId'),
         headers: {'Authorization': token, 'Accept': 'application/json'},
       );
     });
@@ -514,60 +514,45 @@ class ApiService {
   // FLASK ML SERVICE
   // ───────────────────────────────────────────────────────────────────────────
   Future<Map<String, dynamic>> checkFlaskStatus() async {
-  // Coba beberapa endpoint umum
-  final endpoints = ['/health', '/status', '/'];
-  
-  for (final endpoint in endpoints) {
-    try {
-      final response = await http.get(
-        Uri.parse('$_flaskUrl$endpoint'),
-      ).timeout(const Duration(seconds: 5));
-      
-      if (response.statusCode == 200) {
-        Map<String, dynamic> data = {};
-        try { data = jsonDecode(response.body); } catch (_) {}
-        return {
-          'connected': true,
-          'model_loaded': data['model_loaded'] ?? true,
-        };
+    final endpoints = ['/health', '/status', '/'];
+    for (final endpoint in endpoints) {
+      try {
+        final response = await http
+            .get(Uri.parse('$_flaskUrl$endpoint'))
+            .timeout(const Duration(seconds: 5));
+        if (response.statusCode == 200) {
+          Map<String, dynamic> data = {};
+          try {
+            data = jsonDecode(response.body);
+          } catch (_) {}
+          return {
+            'connected': true,
+            'model_loaded': data['model_loaded'] ?? true,
+          };
+        }
+      } catch (_) {
+        continue;
       }
-    } catch (_) {
-      continue;
     }
+    return {'connected': false, 'model_loaded': false};
   }
-  return {'connected': false, 'model_loaded': false};
-}
 
-  Future<Map<String, dynamic>> getAiRecommendations(
+ Future<Map<String, dynamic>> getAiRecommendations(
     Map<String, dynamic> payload,
   ) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$_flaskUrl/recommend'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 30));
-
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200) {
-        return {
-          'success': true,
-          'data': data['recommendations'] ?? data['data'] ?? data,
-        };
-      }
-      return {
-        'success': false,
-        'message': data['message'] ?? 'Gagal mendapatkan rekomendasi',
-      };
-    } catch (e) {
-      return {
-        'success': false,
-        'message': 'Koneksi ke Flask gagal: $e',
-      };
-    }
+    return _requestWithAuth((token) async {
+      return await http
+          .post(
+            Uri.parse('$_baseUrl/v1/recommendations'),
+            headers: {
+              'Authorization': token,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 45));
+    });
   }
   
   Future<Map<String, dynamic>> geocodeAddress(String query) async {

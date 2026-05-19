@@ -71,14 +71,22 @@ class _MyProjectsUmkmPageState extends State<MyProjectsUmkmPage>
     }
   }
 
+  // Status yang dianggap "benar-benar selesai" — hanya setelah admin verifikasi
+  static const _completedStatuses = {'completed', 'done'};
+
   List<Project> get _filteredProjects {
     return _projects.where((p) {
+      final s = p.status;
       if (_selectedTab == 0) {
-        // TAB AKTIF: semua status yang sedang berjalan (termasuk lewat deadline)
-        return p.status != 'completed' && p.status != 'done' && p.status != 'cancelled';
+        // TAB AKTIF:
+        // Semua proyek yang belum final-selesai, termasuk yang masih
+        // menunggu verifikasi admin (pending_admin_approval, rating_pending, dll.)
+        // → jangan pindah ke Selesai sampai admin benar-benar approve
+        return !_completedStatuses.contains(s) && s != 'cancelled';
       } else {
-        // TAB SELESAI
-        return p.status == 'completed' || p.status == 'done';
+        // TAB SELESAI:
+        // Hanya proyek yang sudah diverifikasi admin → status completed / done
+        return _completedStatuses.contains(s);
       }
     }).toList();
   }
@@ -313,7 +321,11 @@ class _ProjectCard extends StatelessWidget {
       case 'ready_for_review':
         return 'SIAP DIREVIEW';
       case 'pending_admin_approval':
-        return 'MENUNGGU ADMIN';
+      case 'awaiting_admin':
+        return 'MENUNGGU VERIFIKASI';
+      case 'rating_pending':
+      case 'pending_completion':
+        return 'MENUNGGU VERIFIKASI';
       case 'revision':
         return 'REVISI';
       case 'disputed':

@@ -13,6 +13,8 @@ import 'project_applicants.dart';
 import 'project_detail.dart';
 import 'creative_detail_page.dart';
 import 'ai_recommendation_page.dart';
+import 'escrow_payment_page.dart';
+import 'project_progress_detail.dart';
 
 class UmkmDashboard extends StatefulWidget {
   const UmkmDashboard({super.key});
@@ -356,11 +358,10 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
     );
 
     if (confirm == true && mounted) {
-      // Arahkan ke halaman detail proyek untuk proses pembayaran
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => ProjectDetailPage(projectId: project.id),
+          builder: (_) => EscrowPaymentPage(project: project),
         ),
       ).then((_) => _loadAllData());
     }
@@ -594,8 +595,6 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
           children: [
             _buildWelcomeBanner(),
             const SizedBox(height: 16),
-            // ── FIX: Banner "Lanjutkan Pembayaran" jika ada proyek payment pending ──
-            _buildPaymentPendingBanner(),
             _buildStatsGrid(),
             const SizedBox(height: 20),
             _buildQuickActions(),
@@ -1159,7 +1158,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
           )
         else
           SizedBox(
-            height: 140,
+            height: 175,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               itemCount: _recommendedCreatives.length,
@@ -1180,7 +1179,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
     final relevanceScore = creative['relevance_score'] as double;
 
     return Container(
-      width: 140,
+      width: 148,
       margin: const EdgeInsets.only(right: 10),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1212,6 +1211,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
             padding: const EdgeInsets.all(10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.max,
               children: [
                 Row(
                   children: [
@@ -1328,6 +1328,40 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
                     ),
                   ),
                 ],
+                const Spacer(),
+                // ── Tombol Lihat Profil ──────────────────────────────────
+                SizedBox(
+                  width: double.infinity,
+                  child: GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => CreativeDetailPage(
+                              creativeId: creative['id'] ?? ''),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A4B84).withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(7),
+                        border: Border.all(
+                            color: const Color(0xFF1A4B84).withOpacity(0.2)),
+                      ),
+                      child: Text(
+                        'Lihat Profil',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF1A4B84),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1338,14 +1372,36 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
 
   // ==================== RECENT PROJECTS ====================
 
+  // Statuses yang dianggap "aktif" / masih dalam alur kerja sama
+  static const _activeKerjasamaStatuses = [
+    'open',
+    'published',
+    'pending',
+    // Ada pelamar, menunggu pilihan
+    'applied',
+    'reviewing',
+    'in_review',
+    // Dipilih kreator, menunggu pembayaran
+    'hired',
+    'payment_pending',
+    'awaiting_payment',
+    'waiting_payment',
+    // Selesai dari kreator, menunggu review/verifikasi
+    'submitted',
+    'completed_by_creative',
+    'review',
+    'pending_review',
+    'pending_verification',
+    'waiting_verification',
+  ];
+
   Widget _buildRecentProjectsSection() {
-    // Tampilkan proyek yang sedang berjalan (BUKAN yang payment_pending, sudah ada bannernya)
-    final activeProjects = _recentProjects
-        .where((p) =>
-            p.status == 'in_progress' || p.status == 'ongoing')
+    // Tampilkan SEMUA proyek yang masih dalam alur kerja sama (belum final)
+    final kerjasamaProjects = _recentProjects
+        .where((p) => _activeKerjasamaStatuses.contains(p.status))
         .toList();
 
-    if (activeProjects.isEmpty) return const SizedBox.shrink();
+    if (kerjasamaProjects.isEmpty) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1375,26 +1431,86 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
           ],
         ),
         const SizedBox(height: 10),
-        ...activeProjects.map((project) => _statusKerjasamaCard(project)),
+        ...kerjasamaProjects.map((project) => _statusKerjasamaCard(project)),
       ],
     );
   }
 
+  // ── Helper: tentukan step berdasarkan status proyek ──────────────────────
+  // Step 1: Menunggu pelamar (open/published/pending)
+  // Step 2: Ada pelamar, pilih kreator (applied/reviewing)
+  // Step 3: Menunggu pembayaran escrow (hired/payment_pending/...)
+  // Step 4: Proyek berjalan (in_progress/ongoing)
+  // Step 5: Menunggu review & verifikasi (submitted/review/pending_verification/...)
+  _KerjasamaStep _getStep(String status) {
+    switch (status) {
+      case 'open':
+      case 'published':
+      case 'pending':
+        return _KerjasamaStep.menungguPelamar;
+      case 'applied':
+      case 'reviewing':
+      case 'in_review':
+        return _KerjasamaStep.adaPelamar;
+      case 'hired':
+      case 'payment_pending':
+      case 'awaiting_payment':
+      case 'waiting_payment':
+        return _KerjasamaStep.menungguPembayaran;
+      case 'in_progress':
+      case 'ongoing':
+      case 'submitted':
+      case 'completed_by_creative':
+      case 'review':
+      case 'pending_review':
+      case 'pending_verification':
+      case 'waiting_verification':
+        return _KerjasamaStep.reviewVerifikasi;
+      default:
+        return _KerjasamaStep.reviewVerifikasi;
+    }
+  }
+
   Widget _statusKerjasamaCard(Project project) {
-    const statusColor = Color(0xFFE29578);
-    const statusIcon = Icons.trending_up;
-    const statusLabel = 'SEDANG BERJALAN';
+    final step = _getStep(project.status);
+
+    Color statusColor;
+    IconData statusIcon;
+    String statusLabel;
+
+    switch (step) {
+      case _KerjasamaStep.menungguPelamar:
+        statusColor = const Color(0xFF9E9E9E);
+        statusIcon = Icons.hourglass_empty_rounded;
+        statusLabel = 'MENUNGGU PELAMAR';
+        break;
+      case _KerjasamaStep.adaPelamar:
+        statusColor = const Color(0xFF5C6BC0);
+        statusIcon = Icons.people_alt_rounded;
+        statusLabel = 'ADA PELAMAR';
+        break;
+      case _KerjasamaStep.menungguPembayaran:
+        statusColor = const Color(0xFFE29578);
+        statusIcon = Icons.payment_rounded;
+        statusLabel = 'MENUNGGU PEMBAYARAN';
+        break;
+      case _KerjasamaStep.reviewVerifikasi:
+        statusColor = const Color(0xFF1A4B84);
+        statusIcon = Icons.verified_outlined;
+        statusLabel = 'REVIEW & VERIFIKASI';
+        break;
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [statusColor.withOpacity(0.08), Colors.white],
+          colors: [statusColor.withOpacity(0.07), Colors.white],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: statusColor.withOpacity(0.2)),
+        border: Border.all(color: statusColor.withOpacity(0.25)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
@@ -1414,6 +1530,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // ── Baris atas: badge status + info pelamar ──────────────
                 Row(
                   children: [
                     Container(
@@ -1423,11 +1540,11 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
                         color: statusColor.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(statusIcon, size: 10, color: statusColor),
-                          SizedBox(width: 4),
+                          const SizedBox(width: 4),
                           Text(
                             statusLabel,
                             style: TextStyle(
@@ -1458,6 +1575,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
                   ],
                 ),
                 const SizedBox(height: 8),
+                // ── Judul proyek ─────────────────────────────────────────
                 Text(
                   project.title,
                   style: GoogleFonts.plusJakartaSans(
@@ -1469,6 +1587,7 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
+                // ── Baris bawah: budget + tombol aksi ────────────────────
                 Row(
                   children: [
                     const Icon(Icons.attach_money,
@@ -1482,22 +1601,8 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
                       ),
                     ),
                     const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: statusColor,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Lihat Detail',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
+                    // ── Tombol aksi sesuai step ──────────────────────────
+                    _buildStepActionButton(project, step, statusColor),
                   ],
                 ),
               ],
@@ -1506,6 +1611,140 @@ class _UmkmDashboardState extends State<UmkmDashboard> {
         ),
       ),
     );
+  }
+
+  // ── Tombol aksi per step ──────────────────────────────────────────────────
+  Widget _buildStepActionButton(
+      Project project, _KerjasamaStep step, Color color) {
+    switch (step) {
+      case _KerjasamaStep.menungguPelamar:
+        return GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ExploreCreativesPage()),
+            );
+          },
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.search_rounded,
+                    size: 11, color: Colors.white),
+                const SizedBox(width: 4),
+                Text(
+                  'Cari Kreator',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+
+      case _KerjasamaStep.adaPelamar:
+        return GestureDetector(
+          onTap: () => _navigateToApplicants(project),
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.people_alt_rounded,
+                    size: 11, color: Colors.white),
+                const SizedBox(width: 4),
+                Text(
+                  'Lihat Pelamar',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+
+      case _KerjasamaStep.menungguPembayaran:
+        return GestureDetector(
+          onTap: () => _navigateToPayment(project),
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.payment_rounded,
+                    size: 11, color: Colors.white),
+                const SizedBox(width: 4),
+                Text(
+                  'Bayar Escrow',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+
+      case _KerjasamaStep.reviewVerifikasi:
+        return GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ProjectProgressDetailPage(project: project),
+              ),
+            ).then((_) => _loadAllData());
+          },
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.verified_outlined,
+                    size: 11, color: Colors.white),
+                const SizedBox(width: 4),
+                Text(
+                  'Review Hasil',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+    }
   }
 
   Widget _buildEmptyProjectState() {
@@ -1887,4 +2126,12 @@ class _NotificationsSheet extends StatelessWidget {
       return '';
     }
   }
+}
+
+// ── Enum step alur kerja sama UMKM ───────────────────────────────────────────
+enum _KerjasamaStep {
+  menungguPelamar,    // Step 1: proyek baru, belum ada pelamar
+  adaPelamar,         // Step 2: ada pelamar, pilih kreator
+  menungguPembayaran, // Step 3: kreator dipilih, bayar escrow
+  reviewVerifikasi,   // Step 4: selesai dari kreator, tunggu review & verifikasi admin
 }

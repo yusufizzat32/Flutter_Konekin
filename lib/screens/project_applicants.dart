@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../models/project_model.dart';
+import 'proposal_preview_page.dart';
 
 class ProjectApplicantsPage extends StatefulWidget {
   final Project project;
@@ -375,9 +376,18 @@ class _ProjectApplicantsPageState extends State<ProjectApplicantsPage> {
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () {
-                      // TODO: Open proposal URL
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Proposal: $proposalUrl')),
+                      final proposalType = applicant['proposal_type']?.toString() ?? 'pdf';
+                      final downloadUrl = applicant['proposal_download_url']?.toString();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ProposalPreviewPage(
+                            proposalUrl: proposalUrl,
+                            proposalType: proposalType,
+                            applicantName: name,
+                            downloadUrl: downloadUrl,
+                          ),
+                        ),
                       );
                     },
                     icon: const Icon(Icons.description_outlined, size: 16),
