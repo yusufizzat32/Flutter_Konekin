@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
 
+
 class EditProfilePage extends StatefulWidget {
   final Map<String, dynamic>? userData;
 
@@ -42,7 +43,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
       return rawUrl;
     }
     // URL relatif dari Laravel storage — gabungkan dengan base URL server
-    final base = AuthService.baseUrl.replaceFirst('/api', '');
+    final base = AuthService().baseUrl.replaceFirst('/api', '');
     return '$base/storage/$rawUrl'
         .replaceAll('/storage/storage/', '/storage/');
   }

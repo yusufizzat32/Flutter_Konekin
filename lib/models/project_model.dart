@@ -28,6 +28,10 @@ class Project {
   final DateTime createdAt;
   final DateTime? deadline;
   final int? applicantCount;
+  final String? selectedCreativeTier;
+  final double? selectedCreativeAvgRating;
+  final int? selectedCreativeFiveStarCount;
+  final int? selectedCreativeTotalRatings;
 
   Project({
     required this.id,
@@ -52,6 +56,10 @@ class Project {
     required this.createdAt,
     this.deadline,
     this.applicantCount,
+    this.selectedCreativeTier,
+    this.selectedCreativeAvgRating,
+    this.selectedCreativeFiveStarCount,
+    this.selectedCreativeTotalRatings,
   });
 
   factory Project.fromJson(Map<String, dynamic> json) {
@@ -138,6 +146,16 @@ class Project {
       selectedCreativeId: d['selected_creative_id']?.toString(),
       selectedCreativeName: d['selected_creative_name']?.toString(),
       selectedCreativeAvatar: d['selected_creative_avatar']?.toString(),
+      selectedCreativeTier: d['selected_creative_tier']?.toString(),
+      selectedCreativeAvgRating: d['selected_creative_avg_rating'] != null
+      ? double.tryParse(d['selected_creative_avg_rating'].toString())
+      : null,
+      selectedCreativeFiveStarCount: d['selected_creative_five_star_count'] != null
+      ? int.tryParse(d['selected_creative_five_star_count'].toString())
+      : null,
+       selectedCreativeTotalRatings: d['selected_creative_total_ratings'] != null
+      ? int.tryParse(d['selected_creative_total_ratings'].toString())
+      : null,
       escrowStatus: d['escrow_status']?.toString(),
       progressPercentage: progress,
       createdAt: d['created_at'] != null
@@ -172,6 +190,10 @@ class Project {
       'created_at': createdAt.toIso8601String(),
       'deadline': deadline?.toIso8601String(),
       'applicant_count': applicantCount,
+      'selected_creative_tier'            : selectedCreativeTier,
+      'selected_creative_avg_rating'      : selectedCreativeAvgRating,
+      'selected_creative_five_star_count' : selectedCreativeFiveStarCount,
+      'selected_creative_total_ratings'   : selectedCreativeTotalRatings,
     };
   }
 }

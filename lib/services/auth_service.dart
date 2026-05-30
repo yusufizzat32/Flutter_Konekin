@@ -12,7 +12,7 @@ class AuthService {
   // Emulator Android: 10.0.2.2
   // Real device: IP komputer di jaringan yang sama
   // Chrome web: localhost
-  static const String baseUrl = 'http://localhost:8000/api';
+  final baseUrl = 'http://10.0.2.2:8000/api'; // Ganti dengan URL API Anda
   
   // Keys SharedPreferences
   static const String _tokenKey = 'auth_token';

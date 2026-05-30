@@ -91,7 +91,7 @@ class _ProfileUmkmPageState extends State<ProfileUmkmPage> {
     if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
       return rawUrl;
     }
-    final base = AuthService.baseUrl.replaceFirst('/api', '');
+    final base = AuthService().baseUrl.replaceFirst('/api', '');
     final clean = rawUrl.startsWith('/') ? rawUrl : '/storage/$rawUrl';
     return '$base$clean'.replaceAll('/storage/storage/', '/storage/');
   }
