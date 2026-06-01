@@ -1,0 +1,1092 @@
+// =============================================================================
+// registrasi_screen.dart — Menggunakan AuthService (Reusable Auth Logic)
+// =============================================================================
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../services/auth_service.dart';
+import 'umkm_dashboard.dart';
+import 'creative_dashboard.dart';
+
+// ── Tipe user ─────────────────────────────────────────────────────────────────
+
+enum UserType { umkm, creativeWorker }
+
+extension UserTypeX on UserType {
+  String get apiValue => switch (this) {
+        UserType.umkm           => 'umkm',
+        UserType.creativeWorker => 'creative_worker',
+      };
+
+  String get appBarTitle => switch (this) {
+        UserType.umkm           => 'Daftar UMKM',
+        UserType.creativeWorker => 'Daftar Creative Worker',
+      };
+}
+
+// ── Design tokens ─────────────────────────────────────────────────────────────
+
+const _cDark         = Color(0xFF1B1B1F);
+const _cMid          = Color(0xFF424750);
+const _cBlueDeep     = Color(0xFF003466);
+const _cBlueMain     = Color(0xFF1A4B84);
+const _cInputBg      = Color(0xFFEAE7ED);
+const _cWhiteBg      = Color(0xFFFBF8FE);
+const _cTopBarBorder = Color(0x26C3C6D1);
+const _cError        = Color(0xFFB00020);
+
+const _gradientBtn = LinearGradient(
+  begin: Alignment(-0.55, -0.83),
+  end: Alignment(0.55, 0.83),
+  colors: [_cBlueDeep, _cBlueMain],
+);
+
+// =============================================================================
+// SCREEN
+// =============================================================================
+
+class RegistrasiScreen extends StatefulWidget {
+  final UserType userType;
+
+  const RegistrasiScreen({super.key, required this.userType});
+
+  @override
+  State<RegistrasiScreen> createState() => _RegistrasiScreenState();
+}
+
+class _RegistrasiScreenState extends State<RegistrasiScreen> {
+  final _formKey    = GlobalKey<FormState>();
+
+  final _namaCtrl     = TextEditingController();
+  final _emailCtrl    = TextEditingController();
+  final _teleponCtrl  = TextEditingController();
+  final _lokasiCtrl   = TextEditingController();
+  final _passCtrl     = TextEditingController();
+  final _konfPassCtrl = TextEditingController();
+
+  // Bank fields (UMKM & Creative Worker)
+  String? _selectedBank;
+  final _nomorRekeningCtrl   = TextEditingController();
+  final _namaPemilikRekCtrl  = TextEditingController();
+
+  // Creative Worker fields
+  String? _selectedCreativeCategory;
+
+  static const List<String> _creativeCategoryList = [
+    'Full Stack Developer',
+    'Web Developer',
+    'Frontend Developer',
+    'Backend Developer',
+    'App Developer',
+    'Graphic Designer',
+    'Illustrator',
+    'UI/UX Designer',
+    'Product Designer',
+    'Video Editor',
+    'Videographer',
+    'Motion Graphic',
+    'Animator',
+    'Content Creator',
+    'Photographer',
+    'Copywriter',
+    'Content Writer',
+    'UGC Creator',
+    'Social Media Specialist',
+    'Social Media Manager',
+    'Social Media Marketing',
+    'Brand Strategist',
+  ];
+
+  static const List<String> _bankList = [
+    'BCA (Bank Central Asia)',
+    'Bank Mandiri',
+    'BNI (Bank Negara Indonesia)',
+    'BRI (Bank Rakyat Indonesia)',
+    'CIMB Niaga',
+    'Bank Permata',
+    'Maybank',
+    'DBS Indonesia',
+    'Bank Danamon',
+    'OCBC NISP',
+    'Bank Lainnya',
+  ];
+
+  bool _obscurePass     = true;
+  bool _obscureKonfPass = true;
+  bool _isLoading       = false;
+
+  // Instance AuthService
+  final AuthService _auth = AuthService();
+
+  @override
+  void dispose() {
+    _namaCtrl.dispose();
+    _emailCtrl.dispose();
+    _teleponCtrl.dispose();
+    _lokasiCtrl.dispose();
+    _passCtrl.dispose();
+    _konfPassCtrl.dispose();
+    _nomorRekeningCtrl.dispose();
+    _namaPemilikRekCtrl.dispose();
+    super.dispose();
+  }
+
+  // ── Validators ─────────────────────────────────────────────────────────────
+
+  String? _validateNama(String? v) {
+    if (v == null || v.trim().isEmpty) return 'Nama lengkap tidak boleh kosong';
+    if (v.trim().length < 3) return 'Nama minimal 3 karakter';
+    if (!RegExp(r"^[a-zA-Z\s'.,-]+$").hasMatch(v.trim())) {
+      return 'Nama hanya boleh mengandung huruf dan spasi';
+    }
+    return null;
+  }
+
+  String? _validateEmail(String? v) {
+    if (v == null || v.trim().isEmpty) return 'Email tidak boleh kosong';
+    final emailRegex = RegExp(r'^[\w.+-]+@[\w-]+\.[a-zA-Z]{2,}$');
+    if (!emailRegex.hasMatch(v.trim())) return 'Format email tidak valid';
+    return null;
+  }
+
+  String? _validateTelepon(String? v) {
+    if (v == null || v.trim().isEmpty) return 'Nomor telepon tidak boleh kosong';
+    final digits = v.trim().replaceAll(RegExp(r'[\s\-]'), '');
+    if (!RegExp(r'^\+?[0-9]+$').hasMatch(digits)) {
+      return 'Nomor telepon hanya boleh berisi angka';
+    }
+    if (digits.length < 9 || digits.length > 15) {
+      return 'Nomor telepon harus 9–15 digit';
+    }
+    return null;
+  }
+
+  String? _validateLokasi(String? v) {
+    if (v == null || v.trim().isEmpty) return 'Kota/Kabupaten tidak boleh kosong';
+    if (v.trim().length < 3) return 'Nama kota minimal 3 karakter';
+    return null;
+  }
+
+  String? _validatePassword(String? v) {
+    if (v == null || v.isEmpty) return 'Kata sandi tidak boleh kosong';
+    if (v.length < 8) return 'Kata sandi minimal 8 karakter';
+    if (!RegExp(r'[A-Z]').hasMatch(v)) return 'Harus mengandung minimal 1 huruf kapital';
+    if (!RegExp(r'[0-9]').hasMatch(v)) return 'Harus mengandung minimal 1 angka';
+    return null;
+  }
+
+  String? _validateKonfirmasi(String? v) {
+    if (v == null || v.isEmpty) return 'Konfirmasi kata sandi tidak boleh kosong';
+    if (v != _passCtrl.text) return 'Kata sandi tidak cocok';
+    return null;
+  }
+
+  // ── Show Snackbar ─────────────────────────────────────────────────────────
+
+  void _showSnackbar(String message, {bool isError = true}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.green,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  // ── Submit Registrasi (Menggunakan AuthService) ────────────────────────────
+
+  Future<void> _onDaftar() async {
+    // Tutup keyboard sebelum validasi
+    FocusScope.of(context).unfocus();
+
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    // Gunakan AuthService untuk registrasi
+    final result = await _auth.register(
+      type: widget.userType.apiValue,
+      name: _namaCtrl.text.trim(),
+      email: _emailCtrl.text.trim(),
+      password: _passCtrl.text,
+      passwordConfirmation: _konfPassCtrl.text,
+      phone: _teleponCtrl.text.trim(),
+      city: _lokasiCtrl.text.trim(),
+      bankName: _selectedBank,
+      bankAccountNumber: _nomorRekeningCtrl.text.trim(),
+      bankAccountName: _namaPemilikRekCtrl.text.trim(),
+      creativeCategory: widget.userType == UserType.creativeWorker
+          ? _selectedCreativeCategory
+          : null,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    if (result['success']) {
+      _showSnackbar(result['message'], isError: false);
+      
+      final userType = result['userType'];
+      
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted) {
+          if (userType == 'umkm') {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const UmkmDashboard()),
+            );
+          } else if (userType == 'creative_worker') {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const CreativeDashboard()),
+            );
+          } else {
+            // Default: kembali ke halaman login
+            Navigator.pop(context);
+          }
+        }
+      });
+    } else {
+      _showSnackbar(result['message'], isError: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      resizeToAvoidBottomInset: true,
+      body: SafeArea(
+        child: LayoutBuilder(builder: (context, constraints) {
+          final w  = constraints.maxWidth;
+          final h  = constraints.maxHeight;
+          final sw = w / 390;
+          final sh = h / 730;
+          final s  = sw < sh ? sw : sh;
+
+          return Stack(
+            children: [
+              Positioned(
+                top: 56 * sh,
+                left: 0, right: 0, bottom: 0,
+                child: _buildBody(sw, sh, s),
+              ),
+              _buildAppBar(sw, sh, s),
+              if (_isLoading)
+                Container(
+                  color: Colors.black.withOpacity(0.5),
+                  child: const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
+            ],
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildAppBar(double sw, double sh, double s) {
+    return Positioned(
+      top: 0, left: 0, right: 0,
+      child: Container(
+        height: 56 * sh,
+        padding: EdgeInsets.symmetric(horizontal: 24 * sw),
+        decoration: BoxDecoration(
+          color: _cWhiteBg.withOpacity(0.8),
+          border: const Border(bottom: BorderSide(color: _cTopBarBorder)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0D1B1B1F),
+              blurRadius: 2,
+              offset: Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            GestureDetector(
+              onTap: () => Navigator.maybePop(context),
+              behavior: HitTestBehavior.opaque,
+              child: Row(
+                children: [
+                  Icon(Icons.arrow_back_ios_new, size: 16 * s, color: _cBlueMain),
+                  SizedBox(width: 16 * s),
+                  Text(
+                    widget.userType.appBarTitle,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 18 * s,
+                      letterSpacing: -0.45,
+                      color: _cBlueMain,
+                      height: 28 / 18,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ShaderMask(
+              shaderCallback: (b) => _gradientBtn.createShader(b),
+              blendMode: BlendMode.srcIn,
+              child: Text(
+                'Konekin',
+                style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 20 * s,
+                  color: Colors.white,
+                  height: 28 / 20,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody(double sw, double sh, double s) {
+    return Form(
+      key: _formKey,
+      child: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Padding(
+                padding: EdgeInsets.only(top: 20 * sh),
+                child: _Card(sw: sw, sh: sh, s: s, children: [
+                  _Field(
+                    label: 'Nama Lengkap',
+                    placeholder: 'Masukkan nama lengkap Anda',
+                    leadingIcon: Icons.person_outline,
+                    controller: _namaCtrl,
+                    keyboardType: TextInputType.name,
+                    validator: _validateNama,
+                    s: s, sh: sh,
+                  ),
+                  SizedBox(height: 15 * sh),
+                  _Field(
+                    label: 'Alamat Email',
+                    placeholder: 'nama@perusahaan.com',
+                    leadingIcon: Icons.mail_outline,
+                    controller: _emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    validator: _validateEmail,
+                    s: s, sh: sh,
+                  ),
+                  SizedBox(height: 15 * sh),
+                  _Field(
+                    label: 'Nomor Telepon',
+                    placeholder: '+62',
+                    leadingIcon: Icons.phone_outlined,
+                    controller: _teleponCtrl,
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9+\s\-]'))],
+                    validator: _validateTelepon,
+                    s: s, sh: sh,
+                  ),
+                  SizedBox(height: 15 * sh),
+                  _Field(
+                    label: 'Kota/Kabupaten',
+                    placeholder: 'Masukkan kota/kabupaten Anda',
+                    leadingIcon: Icons.location_on_outlined,
+                    controller: _lokasiCtrl,
+                    keyboardType: TextInputType.streetAddress,
+                    validator: _validateLokasi,
+                    s: s, sh: sh,
+                  ),
+                  // ── Section Bank (hanya UMKM) ─────────────────────────────
+                  if (widget.userType == UserType.umkm) ...[
+                    SizedBox(height: 20 * sh),
+                    _BankSectionDivider(s: s, sh: sh),
+                    SizedBox(height: 16 * sh),
+                    // Dropdown Nama Bank
+                    _BankDropdown(
+                      label: 'Nama Bank',
+                      value: _selectedBank,
+                      banks: _bankList,
+                      s: s, sh: sh,
+                      onChanged: (val) => setState(() => _selectedBank = val),
+                    ),
+                    SizedBox(height: 15 * sh),
+                    _Field(
+                      label: 'Nomor Rekening',
+                      placeholder: 'Contoh: 123456789',
+                      leadingIcon: Icons.credit_card_outlined,
+                      controller: _nomorRekeningCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      s: s, sh: sh,
+                    ),
+                    SizedBox(height: 15 * sh),
+                    _Field(
+                      label: 'Nama Pemilik Rekening',
+                      placeholder: 'Sesuai nama di buku tabungan',
+                      leadingIcon: Icons.person_pin_outlined,
+                      controller: _namaPemilikRekCtrl,
+                      keyboardType: TextInputType.name,
+                      s: s, sh: sh,
+                    ),
+                  ],
+                  // ── Section Creative Worker ───────────────────────────────
+                  if (widget.userType == UserType.creativeWorker) ...[
+                    SizedBox(height: 20 * sh),
+                    _CategorySectionDivider(s: s, sh: sh),
+                    SizedBox(height: 16 * sh),
+                    _GenericDropdown(
+                      label: 'Kategori Keahlian',
+                      hint: 'Pilih kategori keahlian Anda',
+                      icon: Icons.workspace_premium_outlined,
+                      value: _selectedCreativeCategory,
+                      items: _creativeCategoryList,
+                      s: s, sh: sh,
+                      validator: (v) => v == null ? 'Kategori keahlian wajib dipilih' : null,
+                      onChanged: (val) => setState(() => _selectedCreativeCategory = val),
+                    ),
+                    SizedBox(height: 20 * sh),
+                    _BankSectionDivider(s: s, sh: sh),
+                    SizedBox(height: 16 * sh),
+                    _BankDropdown(
+                      label: 'Nama Bank',
+                      value: _selectedBank,
+                      banks: _bankList,
+                      s: s, sh: sh,
+                      onChanged: (val) => setState(() => _selectedBank = val),
+                    ),
+                    SizedBox(height: 15 * sh),
+                    _Field(
+                      label: 'Nomor Rekening',
+                      placeholder: 'Contoh: 123456789',
+                      leadingIcon: Icons.credit_card_outlined,
+                      controller: _nomorRekeningCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      s: s, sh: sh,
+                    ),
+                    SizedBox(height: 15 * sh),
+                    _Field(
+                      label: 'Nama Pemilik Rekening',
+                      placeholder: 'Sesuai nama di buku tabungan',
+                      leadingIcon: Icons.person_pin_outlined,
+                      controller: _namaPemilikRekCtrl,
+                      keyboardType: TextInputType.name,
+                      s: s, sh: sh,
+                    ),
+                  ],
+                  SizedBox(height: 15 * sh),
+                  _Field(
+                    label: 'Kata Sandi',
+                    placeholder: '••••••••',
+                    leadingIcon: Icons.lock_outline,
+                    controller: _passCtrl,
+                    isPassword: true,
+                    obscure: _obscurePass,
+                    onToggleObscure: () => setState(() => _obscurePass = !_obscurePass),
+                    validator: _validatePassword,
+                    s: s, sh: sh,
+                  ),
+                  SizedBox(height: 15 * sh),
+                  _Field(
+                    label: 'Konfirmasi Kata Sandi',
+                    placeholder: '••••••••',
+                    leadingIcon: Icons.lock_outline,
+                    controller: _konfPassCtrl,
+                    isPassword: true,
+                    obscure: _obscureKonfPass,
+                    onToggleObscure: () => setState(() => _obscureKonfPass = !_obscureKonfPass),
+                    validator: _validateKonfirmasi,
+                    s: s, sh: sh,
+                  ),
+                  SizedBox(height: 11 * sh),
+                ]),
+              ),
+            ),
+          ),
+          _BottomBtn(label: 'Daftar', onTap: _onDaftar, s: s, sw: sw, sh: sh),
+        ],
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// SHARED WIDGETS
+// =============================================================================
+
+class _Card extends StatelessWidget {
+  final List<Widget> children;
+  final double sw, sh, s;
+
+  const _Card({
+    required this.children,
+    required this.sw,
+    required this.sh,
+    required this.s,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: 24 * sw),
+      padding: EdgeInsets.fromLTRB(32 * s, 11 * s, 32 * s, 11 * s),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12 * s),
+        boxShadow: const [
+          BoxShadow(color: Color(0x0F1B1B1F), blurRadius: 40),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: children,
+      ),
+    );
+  }
+}
+
+class _Field extends StatelessWidget {
+  final String label;
+  final String placeholder;
+  final IconData leadingIcon;
+  final TextEditingController controller;
+  final TextInputType keyboardType;
+  final bool isPassword;
+  final bool obscure;
+  final VoidCallback? onToggleObscure;
+  final FormFieldValidator<String>? validator;
+  final List<TextInputFormatter>? inputFormatters;
+  final double s, sh;
+
+  const _Field({
+    required this.label,
+    required this.placeholder,
+    required this.leadingIcon,
+    required this.controller,
+    required this.s,
+    required this.sh,
+    this.keyboardType = TextInputType.text,
+    this.isPassword = false,
+    this.obscure = true,
+    this.onToggleObscure,
+    this.validator,
+    this.inputFormatters,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w500,
+            fontSize: 14 * s,
+            color: _cDark,
+            height: 20 / 14,
+          ),
+        ),
+        SizedBox(height: 8 * sh),
+        TextFormField(
+          controller: controller,
+          obscureText: isPassword && obscure,
+          keyboardType: keyboardType,
+          inputFormatters: inputFormatters,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          validator: validator,
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w400,
+            fontSize: 16 * s,
+            color: _cMid,
+          ),
+          decoration: InputDecoration(
+            hintText: placeholder,
+            hintStyle: GoogleFonts.inter(
+              fontWeight: FontWeight.w400,
+              fontSize: 16 * s,
+              color: _cMid.withOpacity(0.6),
+            ),
+            filled: true,
+            fillColor: _cInputBg,
+            contentPadding: EdgeInsets.only(
+              left:   48 * s,
+              right:  isPassword ? 44 * s : 16 * s,
+              top:    16 * s,
+              bottom: 16 * s,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8 * s),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8 * s),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8 * s),
+              borderSide: const BorderSide(color: _cBlueMain, width: 1.5),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8 * s),
+              borderSide: const BorderSide(color: _cError, width: 1.5),
+            ),
+            focusedErrorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8 * s),
+              borderSide: const BorderSide(color: _cError, width: 1.5),
+            ),
+            errorStyle: GoogleFonts.inter(
+              fontSize: 12 * s,
+              color: _cError,
+              height: 1.4,
+            ),
+            errorMaxLines: 2,
+            isDense: true,
+            prefixIcon: Icon(leadingIcon, size: 18 * s, color: _cMid),
+            prefixIconConstraints: BoxConstraints(minWidth: 44 * s, minHeight: 0),
+            suffixIcon: isPassword
+                ? GestureDetector(
+                    onTap: onToggleObscure,
+                    child: Icon(
+                      obscure
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      size: 20 * s,
+                      color: _cMid,
+                    ),
+                  )
+                : null,
+            suffixIconConstraints: BoxConstraints(minWidth: 44 * s, minHeight: 0),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BottomBtn extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  final double s, sw, sh;
+
+  const _BottomBtn({
+    required this.label,
+    required this.onTap,
+    required this.s,
+    required this.sw,
+    required this.sh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: _cTopBarBorder)),
+      ),
+      padding: EdgeInsets.only(top: 20 * sh, bottom: 20 * sh),
+      child: Center(
+        child: Container(
+          width: 278 * sw,
+          height: 52 * s,
+          decoration: BoxDecoration(
+            gradient: _gradientBtn,
+            borderRadius: BorderRadius.circular(8 * s),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0D000000),
+                blurRadius: 2,
+                offset: Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8 * s),
+              onTap: onTap,
+              child: Center(
+                child: Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 16 * s,
+                    color: Colors.white,
+                    height: 24 / 16,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// CATEGORY SECTION DIVIDER
+// =============================================================================
+
+class _CategorySectionDivider extends StatelessWidget {
+  final double s, sh;
+  const _CategorySectionDivider({required this.s, required this.sh});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.all(12 * s),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(10 * s),
+        border: Border.all(color: const Color(0xFF16A34A).withOpacity(0.15)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36 * s,
+            height: 36 * s,
+            decoration: BoxDecoration(
+              color: const Color(0xFF16A34A).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8 * s),
+            ),
+            child: Icon(
+              Icons.workspace_premium_outlined,
+              size: 18 * s,
+              color: const Color(0xFF16A34A),
+            ),
+          ),
+          SizedBox(width: 10 * s),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Kategori Keahlian',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13 * s,
+                    color: const Color(0xFF16A34A),
+                  ),
+                ),
+                SizedBox(height: 2 * sh),
+                Text(
+                  'Pilih bidang keahlian utama Anda',
+                  style: GoogleFonts.inter(
+                    fontSize: 11 * s,
+                    color: const Color(0xFF424750),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// GENERIC DROPDOWN (untuk kategori creative, dll)
+// =============================================================================
+
+class _GenericDropdown extends StatelessWidget {
+  final String label;
+  final String hint;
+  final IconData icon;
+  final String? value;
+  final List<String> items;
+  final ValueChanged<String?> onChanged;
+  final FormFieldValidator<String?>? validator;
+  final double s, sh;
+
+  const _GenericDropdown({
+    required this.label,
+    required this.hint,
+    required this.icon,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+    required this.s,
+    required this.sh,
+    this.validator,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 15 * s, color: _cBlueMain),
+            SizedBox(width: 5 * s),
+            Text(
+              '$label *',
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w500,
+                fontSize: 14 * s,
+                color: _cDark,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 8 * sh),
+        Container(
+          decoration: BoxDecoration(
+            color: _cInputBg,
+            borderRadius: BorderRadius.circular(12 * s),
+          ),
+          child: DropdownButtonFormField<String>(
+            value: value,
+            validator: validator,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+            decoration: InputDecoration(
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: 16 * s,
+                vertical: 14 * s,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12 * s),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12 * s),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12 * s),
+                borderSide: BorderSide(color: _cBlueMain, width: 1.5 * s),
+              ),
+              errorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12 * s),
+                borderSide: BorderSide(color: _cError, width: 1 * s),
+              ),
+              focusedErrorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12 * s),
+                borderSide: BorderSide(color: _cError, width: 1.5 * s),
+              ),
+              filled: true,
+              fillColor: _cInputBg,
+              errorStyle: GoogleFonts.inter(
+                fontSize: 12 * s,
+                color: _cError,
+                height: 1.4,
+              ),
+            ),
+            hint: Text(
+              hint,
+              style: GoogleFonts.inter(
+                fontSize: 15 * s,
+                color: _cMid.withOpacity(0.6),
+              ),
+            ),
+            style: GoogleFonts.inter(
+              fontSize: 15 * s,
+              color: _cDark,
+            ),
+            icon: Icon(Icons.keyboard_arrow_down, color: _cMid, size: 20 * s),
+            isExpanded: true,
+            dropdownColor: Colors.white,
+            borderRadius: BorderRadius.circular(12 * s),
+            items: items
+                .map((item) => DropdownMenuItem<String>(
+                      value: item,
+                      child: Text(
+                        item,
+                        style:
+                            GoogleFonts.inter(fontSize: 14 * s, color: _cDark),
+                      ),
+                    ))
+                .toList(),
+            onChanged: onChanged,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// =============================================================================
+// BANK SECTION DIVIDER
+// =============================================================================
+
+class _BankSectionDivider extends StatelessWidget {
+  final double s, sh;
+  const _BankSectionDivider({required this.s, required this.sh});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.all(12 * s),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEF2FF),
+        borderRadius: BorderRadius.circular(10 * s),
+        border: Border.all(color: const Color(0xFF1A4B84).withOpacity(0.15)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36 * s,
+            height: 36 * s,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A4B84).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8 * s),
+            ),
+            child: Icon(
+              Icons.account_balance_outlined,
+              size: 18 * s,
+              color: const Color(0xFF1A4B84),
+            ),
+          ),
+          SizedBox(width: 10 * s),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Informasi Rekening Bank',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13 * s,
+                    color: const Color(0xFF1A4B84),
+                  ),
+                ),
+                SizedBox(height: 2 * sh),
+                Text(
+                  'Untuk pencairan dana dari platform',
+                  style: GoogleFonts.inter(
+                    fontSize: 11 * s,
+                    color: const Color(0xFF424750),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// BANK DROPDOWN
+// =============================================================================
+
+class _BankDropdown extends StatelessWidget {
+  final String label;
+  final String? value;
+  final List<String> banks;
+  final ValueChanged<String?> onChanged;
+  final double s, sh;
+
+  const _BankDropdown({
+    required this.label,
+    required this.value,
+    required this.banks,
+    required this.onChanged,
+    required this.s,
+    required this.sh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.account_balance_wallet_outlined,
+                size: 15 * s, color: _cBlueMain),
+            SizedBox(width: 5 * s),
+            Text(
+              '$label *',
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w500,
+                fontSize: 14 * s,
+                color: _cDark,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 8 * sh),
+        Container(
+          decoration: BoxDecoration(
+            color: _cInputBg,
+            borderRadius: BorderRadius.circular(12 * s),
+            border: Border.all(color: Colors.transparent),
+          ),
+          child: DropdownButtonFormField<String>(
+            value: value,
+            decoration: InputDecoration(
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: 16 * s,
+                vertical: 14 * s,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12 * s),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12 * s),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12 * s),
+                borderSide: BorderSide(color: _cBlueMain, width: 1.5 * s),
+              ),
+              errorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12 * s),
+                borderSide: BorderSide(color: _cError, width: 1 * s),
+              ),
+              filled: true,
+              fillColor: _cInputBg,
+            ),
+            hint: Text(
+              'Pilih Bank',
+              style: GoogleFonts.inter(
+                fontSize: 16 * s,
+                color: _cMid.withOpacity(0.6),
+              ),
+            ),
+            style: GoogleFonts.inter(
+              fontSize: 15 * s,
+              color: _cDark,
+            ),
+            icon: Icon(Icons.keyboard_arrow_down,
+                color: _cMid, size: 20 * s),
+            isExpanded: true,
+            dropdownColor: Colors.white,
+            borderRadius: BorderRadius.circular(12 * s),
+            items: [
+              DropdownMenuItem<String>(
+                value: null,
+                child: Text(
+                  'Pilih Bank',
+                  style: GoogleFonts.inter(
+                      fontSize: 14 * s, color: _cMid.withOpacity(0.5)),
+                ),
+              ),
+              ...banks.map((bank) => DropdownMenuItem<String>(
+                    value: bank,
+                    child: Text(
+                      bank,
+                      style: GoogleFonts.inter(
+                          fontSize: 14 * s, color: _cDark),
+                    ),
+                  )),
+            ],
+            onChanged: onChanged,
+          ),
+        ),
+      ],
+    );
+  }
+}
